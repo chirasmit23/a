@@ -23,7 +23,7 @@ from huggingface_hub import InferenceClient
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-hf_api_key = os.getenv("hugging_api")
+hf_api_key ="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"
 
 # ----------------------------
 # HF Embedding Function (API-based)
