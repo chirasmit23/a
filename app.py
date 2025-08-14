@@ -7,7 +7,8 @@ import streamlit as st
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
+# --- NEW: Import Chroma ---
+from langchain_community.vectorstores import Chroma
 from langchain.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from langchain.chains import create_retrieval_chain
@@ -17,37 +18,27 @@ import pytesseract
 from PIL import Image
 from youtube_transcript_api import YouTubeTranscriptApi
 from pathlib import Path
-
-# --- Import the Nomic Embeddings model ---
 from langchain_nomic import NomicEmbeddings
 
 # ----------------------------
-# Load API Keys
+# Load API Keys & Instantiate Models
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-nomic_api_key = os.getenv("nomic_api")
+nomic_api_key = os.getenv("NOMIC_API_KEY")
 
-# ----------------------------
-# Instantiate Models (The "Dream Team")
-# ----------------------------
-# Check for API keys and stop if they are missing.
-if not groq_api_key:
-    st.error("GROQ_APIKEY not found in environment secrets. Please add it to continue.")
-    st.stop()
-if not nomic_api_key:
-    st.error("NOMIC_API_KEY not found in environment secrets. Please add it to continue.")
+if not groq_api_key or not nomic_api_key:
+    st.error("API keys for Groq and Nomic must be set in your environment secrets.")
     st.stop()
 
-# 1. The Inference Model (The "Brain") from Groq
 llm = ChatGroq(model="llama3-8b-8192", api_key=groq_api_key)
-
-# 2. The Embedding Model (The "Librarian") from Nomic
 embeddings_model = NomicEmbeddings(model="nomic-embed-text-v1.5", nomic_api_key=nomic_api_key)
 
 # ----------------------------
-# Extract YouTube ID & Link
+# All your helper functions (extract_youtube_info, fetch_youtube_transcript) remain unchanged.
+# I'll include them here for completeness.
 # ----------------------------
+
 def extract_youtube_info(text):
     """Extracts YouTube URL and Video ID from a given text string."""
     url_match = re.search(r"(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[a-zA-Z0-9_-]{11}\S*)", text)
@@ -57,14 +48,8 @@ def extract_youtube_info(text):
     vid_id = id_match.group(1) if id_match else None
     return url, vid_id
 
-# ----------------------------
-# Stealthy YouTube Transcript Fetcher
-# ----------------------------
 def fetch_youtube_transcript(video_id, url):
-    """
-    Fetches a YouTube transcript, first trying the fast API, then falling back
-    to a stealthier yt-dlp method designed to look like a human browser.
-    """
+    """Fetches a YouTube transcript using a stealthy, multi-step process."""
     try:
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US'])
         transcript = " ".join(seg["text"] for seg in transcript_list if seg["text"].strip())
@@ -124,7 +109,7 @@ if query:
             yt_text = fetch_youtube_transcript(yt_id, yt_url)
             if yt_text:
                 external_docs.append(Document(page_content=yt_text, metadata={"source": "YouTube"}))
-                query = query.replace(yt_url, "").strip() or "Summarize this content."
+                query = query.replace(yt_url, "").strip() or "Summarize the video."
 
     if uploads:
         upload_dir = Path("uploaded_files")
@@ -146,9 +131,9 @@ if query:
             splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             chunks = splitter.split_documents(external_docs)
             
-            # --- This is the clean, modern LangChain way ---
-            # It uses the Nomic model we defined earlier to create embeddings.
-            vs = FAISS.from_documents(chunks, embeddings_model)
+            # --- THE ONLY MAJOR CHANGE: Use Chroma instead of FAISS ---
+            # It's a simple, drop-in replacement.
+            vs = Chroma.from_documents(chunks, embeddings_model)
             
             prompt = ChatPromptTemplate.from_template("Answer the user's question based only on the provided context.\n\n<context>{context}</context>\n\nQuestion: {input}")
             doc_chain = create_stuff_documents_chain(llm, prompt)
@@ -158,6 +143,6 @@ if query:
             resp = chain.invoke({"input": query})
             st.write(resp["answer"])
     
-    elif not yt_id: # Handle general queries if no files or links are provided
+    elif not yt_id: # Handle general queries
         st.write("Answering general question...")
         st.write(llm.invoke(query).content)
