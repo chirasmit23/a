@@ -19,7 +19,7 @@ yt-dlp==2024.8.6
 
 # Machine Learning (all pinned to wheel-safe versions)
 huggingface-hub
-torch==2.5.0
+
 transformers
 
 sentence-transformers
