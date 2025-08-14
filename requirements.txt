@@ -17,14 +17,9 @@ youtube-transcript-api==0.6.2
 webvtt-py==0.4.6
 yt-dlp==2024.8.6
 
-# Machine Learning (all pinned to wheel-safe versions)
+# Hugging Face API client
 huggingface-hub
-
-transformers
-
-sentence-transformers
-faiss-cpu
-
+requests
 
 # PDF Handling
 pypdf
