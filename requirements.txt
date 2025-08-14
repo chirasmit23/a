@@ -8,8 +8,8 @@ langchain-community==0.2.12
 langchain-groq==0.1.8
 langchain-nomic==0.1.3
 
-# Vector store
-faiss-cpu==1.8.0.post1
+chromadb
+
 
 # OCR & Images
 pytesseract==0.3.10
