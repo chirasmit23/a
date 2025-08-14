@@ -7,7 +7,6 @@ import streamlit as st
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import HuggingFaceBgeEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
@@ -17,12 +16,30 @@ from langchain.docstore.document import Document
 import pytesseract
 from PIL import Image
 from youtube_transcript_api import YouTubeTranscriptApi
+from huggingface_hub import InferenceClient
 
 # ----------------------------
-# Load API Key
+# Load API Keys
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
+hf_api_key = os.getenv("hugging_api")
+
+# ----------------------------
+# HF Embedding Function (API-based)
+# ----------------------------
+HF_EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # Small & fast
+hf_client = InferenceClient(api_key=hf_api_key)
+
+def embed_texts(texts):
+    embeddings = []
+    for t in texts:
+        response = hf_client.post(
+            f"https://api-inference.huggingface.co/pipeline/feature-extraction/{HF_EMBED_MODEL}",
+            json={"inputs": t}
+        )
+        embeddings.append(response[0])
+    return embeddings
 
 # ----------------------------
 # Extract YouTube ID & Link
@@ -38,19 +55,15 @@ def extract_youtube_info(text):
 # Fetch transcript via API or yt-dlp + webvtt
 # ----------------------------
 def fetch_youtube_transcript(video_id, url):
-    # First try YouTubeTranscriptApi
     for lang in ("en", "hi"):
         try:
             transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
             return " ".join(seg["text"] for seg in transcript if seg["text"].strip())
         except:
             pass
-
-    # Fallback: yt-dlp to get VTT subtitles
     if not shutil.which("yt-dlp"):
         return None
-
-    vtt_path = f"{video_id}.en.vtt"  # yt-dlp naming convention
+    vtt_path = f"{video_id}.en.vtt"
     cmd = [
         "yt-dlp", "--skip-download",
         "--write-auto-sub", "--sub-lang", "en",
@@ -82,12 +95,8 @@ def build_custom_vectorstore():
         return None
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(docs)
-    embed = HuggingFaceBgeEmbeddings(
-        model_name="BAAI/bge-small-en-v1.5",
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True}
-    )
-    return FAISS.from_documents(chunks, embed)
+    vectors = embed_texts([c.page_content for c in chunks])
+    return FAISS.from_embeddings(list(zip(chunks, vectors)))
 
 custom_vs = build_custom_vectorstore()
 
@@ -141,12 +150,8 @@ if query:
         else:
             splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             chunks = splitter.split_documents(external_docs)
-            embed = HuggingFaceBgeEmbeddings(
-                model_name="BAAI/bge-small-en-v1.5",
-                model_kwargs={"device": "cpu"},
-                encode_kwargs={"normalize_embeddings": True}
-            )
-            vs = FAISS.from_documents(chunks, embed)
+            vectors = embed_texts([c.page_content for c in chunks])
+            vs = FAISS.from_embeddings(list(zip(chunks, vectors)))
             prompt = ChatPromptTemplate.from_template(
                 "Answer based only on the context below.\n<context>{context}</context>\nQuestion: {input}"
             )
