@@ -1,0 +1,13 @@
+streamlit
+python-dotenv
+langchain-community
+langchain-groq
+pytesseract
+Pillow
+opencv-python
+youtube-transcript-api
+webvtt-py
+huggingface-hub
+faiss-cpu
+torch
+transformers
