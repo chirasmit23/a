@@ -18,7 +18,7 @@ from PIL import Image
 from youtube_transcript_api import YouTubeTranscriptApi
 from pathlib import Path
 
-# --- NEW: Import Nomic Embeddings ---
+# --- Import the Nomic Embeddings model ---
 from langchain_nomic import NomicEmbeddings
 
 # ----------------------------
@@ -26,17 +26,23 @@ from langchain_nomic import NomicEmbeddings
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-nomic_api_key = os.getenv("nomic_api") # Nomic's API key
+nomic_api_key = os.getenv("nomic_api")
 
 # ----------------------------
-# --- NEW: Instantiate Embedding Model ---
+# Instantiate Models (The "Dream Team")
 # ----------------------------
-# We initialize the embedding model once. LangChain will handle calling it.
-# This replaces the entire hf_client and embed_texts function.
-if not nomic_api_key:
-    st.error("NOMIC_API_KEY not found in .env file. Please add it to continue.")
+# Check for API keys and stop if they are missing.
+if not groq_api_key:
+    st.error("GROQ_APIKEY not found in environment secrets. Please add it to continue.")
     st.stop()
-    
+if not nomic_api_key:
+    st.error("NOMIC_API_KEY not found in environment secrets. Please add it to continue.")
+    st.stop()
+
+# 1. The Inference Model (The "Brain") from Groq
+llm = ChatGroq(model="llama3-8b-8192", api_key=groq_api_key)
+
+# 2. The Embedding Model (The "Librarian") from Nomic
 embeddings_model = NomicEmbeddings(model="nomic-embed-text-v1.5", nomic_api_key=nomic_api_key)
 
 # ----------------------------
@@ -60,7 +66,7 @@ def fetch_youtube_transcript(video_id, url):
     to a stealthier yt-dlp method designed to look like a human browser.
     """
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'hi'])
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US'])
         transcript = " ".join(seg["text"] for seg in transcript_list if seg["text"].strip())
         if transcript:
             st.info("✅ Transcript fetched quickly via API.")
@@ -68,16 +74,13 @@ def fetch_youtube_transcript(video_id, url):
     except Exception:
         pass
 
-    st.info("🏃‍♂️ API method failed, falling back to stealth mode... (this may take a moment)")
+    st.info("🏃‍♂️ API method failed, falling back to stealth mode...")
     
     if not shutil.which("yt-dlp"):
         st.error("yt-dlp command not found. Please ensure it's installed.")
         return None
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': url,
-    }
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'Referer': url}
     header_args = [arg for key, value in headers.items() for arg in ['--add-header', f'{key}: {value}']]
     output_template = f"{video_id}.%(ext)s"
     vtt_path = f"{video_id}.en.vtt"
@@ -103,26 +106,11 @@ def fetch_youtube_transcript(video_id, url):
         if os.path.exists(vtt_path): os.remove(vtt_path)
 
 # ----------------------------
-# Build vector store for permanent PDFs (optional)
-# ----------------------------
-@st.cache_resource
-def build_custom_vectorstore():
-    PDF_PATHS = []
-    if not PDF_PATHS: return None
-    docs = [doc for p in PDF_PATHS for doc in PyPDFLoader(p).load()]
-    if not docs: return None
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    chunks = splitter.split_documents(docs)
-    # --- SIMPLIFIED: LangChain handles the embedding process directly ---
-    return FAISS.from_documents(chunks, embeddings_model)
-
-custom_vs = build_custom_vectorstore()
-
-# ----------------------------
-# Streamlit UI
+# Streamlit UI & Main Logic
 # ----------------------------
 st.set_page_config(page_title="Multi-Source Q&A Bot", layout="wide")
 st.title("📄 PDF, 🖼️ Image & 🎥 YouTube Q&A Bot")
+st.write("Powered by Groq Llama3 & Nomic Embeddings")
 
 uploads = st.file_uploader("Upload PDFs or Images", type=["pdf","png","jpg","jpeg","webp"], accept_multiple_files=True)
 query = st.text_input("Ask a question or paste a YouTube link", key="query_input").strip()
@@ -136,7 +124,7 @@ if query:
             yt_text = fetch_youtube_transcript(yt_id, yt_url)
             if yt_text:
                 external_docs.append(Document(page_content=yt_text, metadata={"source": "YouTube"}))
-                query = query.replace(yt_url, "").strip() or "Summarize the content of the video."
+                query = query.replace(yt_url, "").strip() or "Summarize this content."
 
     if uploads:
         upload_dir = Path("uploaded_files")
@@ -154,16 +142,15 @@ if query:
                     st.warning(f"Could not process image {f.name}: {e}")
 
     if external_docs:
-        with st.spinner("Analyzing content and preparing answer..."):
+        with st.spinner("Embedding content and preparing answer..."):
             splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             chunks = splitter.split_documents(external_docs)
             
-            # --- SIMPLIFIED: Directly create vector store from documents ---
-            # LangChain now handles the call to Nomic's API automatically.
+            # --- This is the clean, modern LangChain way ---
+            # It uses the Nomic model we defined earlier to create embeddings.
             vs = FAISS.from_documents(chunks, embeddings_model)
             
-            prompt = ChatPromptTemplate.from_template("Answer based only on the context below.\n<context>{context}</context>\nQuestion: {input}")
-            llm = ChatGroq(model="llama3-8b-8192", api_key=groq_api_key)
+            prompt = ChatPromptTemplate.from_template("Answer the user's question based only on the provided context.\n\n<context>{context}</context>\n\nQuestion: {input}")
             doc_chain = create_stuff_documents_chain(llm, prompt)
             retriever = vs.as_retriever()
             chain = create_retrieval_chain(retriever, doc_chain)
@@ -171,10 +158,6 @@ if query:
             resp = chain.invoke({"input": query})
             st.write(resp["answer"])
     
-    elif not yt_id:
-        llm = ChatGroq(model="llama3-8b-8192", api_key=groq_api_key)
-        # Simplified general chat logic
-        if custom_vs and "i don't know" not in (ans := create_retrieval_chain(custom_vs.as_retriever(), create_stuff_documents_chain(llm, ...)).invoke({"input": query}).get("answer", "")):
-            st.write(ans)
-        else:
-            st.write(llm.invoke(query).content)
+    elif not yt_id: # Handle general queries if no files or links are provided
+        st.write("Answering general question...")
+        st.write(llm.invoke(query).content)
