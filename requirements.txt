@@ -1,18 +1,29 @@
+# Server
 gunicorn
 streamlit
 python-dotenv
-langchain
+
+# LangChain (version chosen for wheel compatibility)
+langchain==0.2.14
 langchain-community
 langchain-groq==0.1.8
+
+# OCR & Images
 pytesseract==0.3.10
 Pillow==10.4.0
 opencv-python-headless==4.10.0.84
+
+# YouTube / Video Processing
 youtube-transcript-api==0.6.2
 webvtt-py==0.4.6
-huggingface-hub
-faiss-cpu==1.8.0.post1
+yt-dlp==2024.8.6
+
+# Machine Learning (all have prebuilt wheels)
+huggingface-hub==0.24.6
 torch==2.5.0
 transformers==4.44.2
 sentence-transformers==3.0.1
+faiss-cpu==1.8.0.post1
+
+# PDF Handling
 pypdf==4.2.0
-yt-dlp==2024.8.6
