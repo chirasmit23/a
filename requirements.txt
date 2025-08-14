@@ -1,6 +1,7 @@
 gunicorn
 streamlit
 python-dotenv
+langchain
 langchain-community
 langchain-groq
 pytesseract
@@ -12,3 +13,6 @@ huggingface-hub
 faiss-cpu
 torch
 transformers
+sentence-transformers
+pypdf
+yt_dlp
