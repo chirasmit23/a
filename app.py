@@ -33,12 +33,10 @@ hf_client = InferenceClient(api_key=hf_api_key)
 
 def embed_texts(texts):
     embeddings = []
-    for t in texts:
-        response = hf_client.post(
-            f"https://api-inference.huggingface.co/pipeline/feature-extraction/{HF_EMBED_MODEL}",
-            json={"inputs": t}
-        )
-        embeddings.append(response[0])
+    for text in texts:
+        # Call Hugging Face API for feature extraction (embeddings)
+        result = hf_client.feature_extraction(text)
+        embeddings.append(result)
     return embeddings
 
 # ----------------------------
