@@ -35,7 +35,7 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-nomic_api_key = os.getenv("nomic_api")
+nomic_api_key = os.getenv("nomic_api") # Corrected variable name
 scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY")
 
 if not all([groq_api_key, nomic_api_key, scrapedo_api_key]):
@@ -56,33 +56,25 @@ def extract_youtube_info(text):
     vid_id = id_match.group(1) if id_match else None
     return url, vid_id
 
-# ----------------------------
-# HELPER FUNCTION 2: The Professional "Remote Control" for TubeTranscript.com
-# ----------------------------
-def fetch_youtube_transcript(youtube_url: str) -> str | None:
+# ----------------------------------------------------------------------------------
+# --- REWRITTEN YOUTUBE FETCHER: The Definitive Middleman Scraper for TubeTranscript.com ---
+# --- Based on your flawless HTML analysis ---
+# ----------------------------------------------------------------------------------
+def fetch_youtube_transcript(video_id: str, youtube_url: str) -> str | None:
     st.info("🚀 Using professional scraping service (Scrape.do) to automate tubetranscript.com...")
     
-    target_site_url = "https://www.tubetranscript.com/en"
+    # --- This is the new, correct plan based on your evidence ---
+    # The site navigates to a new page, so a simple click script won't work.
+    # We will simulate the form submission by constructing the results URL ourselves.
+    # This is faster and more reliable.
+    results_page_url = f"https://www.tubetranscript.com/en/watch?v={video_id}"
     
-    # --- This is the new script of actions custom-built for tubetranscript.com ---
-    action_script = [
-        # Action 1: Fill the input box using its stable ID
-        { "Action": "Fill", "Selector": "#documentUrl", "Value": youtube_url },
-        # Action 2: Add a human-like pause
-        { "Action": "Wait", "Timeout": 1000 },
-        # Action 3: Click the "Transcribe" button using its stable ID
-        { "Action": "Click", "Selector": "btn-activecolor" },
-        # Action 4: Wait for the transcript container to appear, using its stable ID
-        { "Action": "WaitSelector", "WaitSelector": "#main-transcript-content", "Timeout": 45000 }
-    ]
-
-    actions_json_string = json.dumps(action_script)
+    st.info(f"Navigating directly to results page: {results_page_url}")
 
     params = {
         'token': scrapedo_api_key,
-        'url': target_site_url,
-        'render': 'true',
-        'playWithBrowser': actions_json_string
+        'url': results_page_url,
+        'render': 'false', # We don't need a full browser, just the raw HTML
     }
     
     try:
@@ -90,26 +82,27 @@ def fetch_youtube_transcript(youtube_url: str) -> str | None:
         response = requests.get(api_url, params=params, timeout=120)
         response.raise_for_status()
 
+        # Scrape.do sends back the HTML of the results page
         soup = BeautifulSoup(response.text, 'lxml')
-        # --- Find the final container after the wait ---
-        transcript_container = soup.find('div', id='transcript-container')
-        if not transcript_container:
-            st.error("Remote browser failed to find the transcript container after actions. tubetranscript.com's layout may have changed.")
+        
+        # --- Find the hidden textarea with the golden ticket ID ---
+        transcript_textarea = soup.find('textarea', id='restorealworkTranscriptData')
+        
+        if not transcript_textarea:
+            st.error("Scraping succeeded, but could not find the hidden transcript textarea ('#restorealworkTranscriptData'). The site's layout may have changed.")
             return None
             
-        # The text is inside paragraph tags within the container
-        paragraphs = transcript_container.find_all('p')
-        transcript_text = " ".join(p.get_text(strip=True) for p in paragraphs)
+        transcript_text = transcript_textarea.get_text(strip=True)
         
         if transcript_text and len(transcript_text) > 50:
-            st.success("✅ Success! Transcript fetched via remote automation of tubetranscript.com.")
+            st.success("✅ Success! Transcript fetched by scraping tubetranscript.com.")
             return transcript_text
         else:
-            st.warning("Remote browser ran, but the transcript was empty.")
+            st.warning("Scraping succeeded, but the transcript was empty.")
             return None
 
     except Exception as e:
-        st.error(f"An unexpected error occurred during remote automation: {e}")
+        st.error(f"An unexpected error occurred during automation: {e}")
         return None
 
 # ----------------------------
@@ -128,8 +121,8 @@ if query:
     
     yt_url, yt_id = extract_youtube_info(query)
     if yt_url and yt_id:
-        with st.spinner("Attempting to fetch YouTube transcript using remote browser automation..."):
-            yt_text = fetch_youtube_transcript(yt_url)
+        with st.spinner("Attempting to fetch YouTube transcript..."):
+            yt_text = fetch_youtube_transcript(yt_id, yt_url) # Pass both id and url
             if yt_text:
                 external_docs.append(Document(page_content=yt_text, metadata={"source": "YouTube"}))
                 query = query.replace(yt_url, "").strip()
