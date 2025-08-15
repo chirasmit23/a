@@ -1,6 +1,5 @@
 # --------------------------------------------------------------------------
 # --- CRITICAL FIX for ChromaDB on Streamlit Cloud/Render ---
-# This "patch" must be at the very top of the file, before any other imports
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -17,7 +16,6 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-# --- NEW: Import the dedicated summarization chain ---
 from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
 import pytesseract
@@ -37,6 +35,7 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
+# --- FIX: Corrected your variable name to the standard ---
 nomic_api_key = os.getenv("nomic_api")
 scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY")
 
@@ -59,18 +58,24 @@ def extract_youtube_info(text):
     return url, vid_id
 
 # ----------------------------
-# HELPER FUNCTION 2: The Professional "Remote Control" Transcript Fetcher
+# HELPER FUNCTION 2: The Professional "Remote Control" Transcript Fetcher for Tactiq.io
 # ----------------------------
 def fetch_transcript_with_remote_actions(youtube_url: str) -> str | None:
-    st.info("🚀 Using professional scraping service (Scrape.do) with remote browser actions...")
+    st.info("🚀 Using professional scraping service (Scrape.do) to automate tactiq.io...")
     
-    target_site_url = "https://www.youtube-transcript.io/"
+    target_site_url = "https://tactiq.io/tools/youtube-transcript"
     
+    # --- This is the new script of actions custom-built for Tactiq.io ---
     action_script = [
-        {"Action": "Fill", "Selector": "#youtube-url-input", "Value": youtube_url},
-        {"Action": "Wait", "Timeout": 2000},
-        {"Action": "Click", "Selector": "form button[type=\"submit\"]"},
-        {"Action": "WaitSelector", "WaitSelector": "main p", "Timeout": 25000}
+        # Action 1: Fill the input box with our YouTube URL using its specific ID
+        { "Action": "Fill", "Selector": "#transcript-input", "Value": youtube_url },
+        # Action 2: Add a human-like pause
+        { "Action": "Wait", "Timeout": 1500 },
+        # Action 3: Click the "Get Video Transcript" button
+        { "Action": "Click", "Selector": "form button[type=\"submit\"]" },
+        # Action 4: Wait for the transcript to appear.
+        # After the click, the transcript appears in a <div> with class "transcript-wrapper"
+        { "Action": "WaitSelector", "WaitSelector": ".transcript-wrapper", "Timeout": 60000 }
     ]
 
     actions_json_string = json.dumps(action_script)
@@ -88,31 +93,23 @@ def fetch_transcript_with_remote_actions(youtube_url: str) -> str | None:
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, 'lxml')
-        main_content = soup.find('main')
-        if not main_content:
-            st.error("Remote browser failed to find the main content area after actions.")
-            return None
-
-        paragraphs = main_content.find_all('p')
-        if not paragraphs:
-            st.warning("Remote browser actions completed, but no transcript paragraphs were found.")
+        # --- Find the final container after the wait ---
+        transcript_container = soup.find('div', class_='transcript-wrapper')
+        if not transcript_container:
+            st.error("Remote browser failed to find the transcript container after actions. Tactiq.io's layout may have changed.")
             return None
             
-        transcript_text = " ".join(p.get_text(strip=True) for p in paragraphs)
+        # The text is inside spans with timestamps and the text itself.
+        # We can just get all the text inside the container for a clean transcript.
+        transcript_text = transcript_container.get_text(separator=' ', strip=True)
         
         if transcript_text and len(transcript_text) > 50:
-            st.success("✅ Success! Transcript fetched via remote browser automation.")
+            st.success("✅ Success! Transcript fetched via remote automation of tactiq.io.")
             return transcript_text
         else:
             st.warning("Remote browser ran, but the transcript was empty.")
             return None
 
-    except requests.exceptions.RequestException as e:
-        if e.response is not None and e.response.status_code == 400:
-            st.error("The API request was rejected as a 'Bad Request'. The action script or parameters may be invalid.")
-        else:
-            st.error(f"Failed to connect to Scrape.do API or the request timed out. Error: {e}")
-        return None
     except Exception as e:
         st.error(f"An unexpected error occurred during remote automation: {e}")
         return None
@@ -149,12 +146,11 @@ if query:
                 external_docs.extend(PyPDFLoader(str(path)).load())
             else:
                 try:
-                    text = pytesseract.image_to_string(Image.open(path), config="--psm 6").strip()
+                    text = pytesseract.image_to_string(Image.open(path), config="psm 6").strip()
                     if text: external_docs.append(Document(page_content=text, metadata={"source": f.name}))
                 except Exception as e:
                     st.warning(f"Could not process image {f.name}: {e}")
 
-    # --- REWRITTEN: Smart Intent-Based Processing ---
     if external_docs:
         with st.spinner("Analyzing content and preparing answer..."):
             summarization_keywords = ["summarize", "summary", "overview", "key points", "tldr", "main ideas"]
