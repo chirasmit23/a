@@ -19,6 +19,7 @@ from langchain_nomic import NomicEmbeddings
 import requests
 from bs4 import BeautifulSoup
 import urllib.parse
+import json # To create the action script
 
 # --- FIX for Render Tesseract ---
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
@@ -28,9 +29,8 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-# --- FIX: Corrected your variable name to the standard ---
 nomic_api_key = os.getenv("nomic_api")
-scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY") # <-- Your new API key
+scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY")
 
 if not all([groq_api_key, nomic_api_key, scrapedo_api_key]):
     st.error("API keys for Groq, Nomic, and Scrape.do must be set in your environment secrets.")
@@ -51,51 +51,85 @@ def extract_youtube_info(text):
     return url, vid_id
 
 # ----------------------------------------------------------------------------------
-# --- NEW: The Professional, Resource-Friendly Transcript Fetcher using Scrape.do ---
+# --- NEW: The Professional "Remote Control" Transcript Fetcher using Scrape.do ---
 # ----------------------------------------------------------------------------------
-def fetch_transcript_with_scrapedo(video_id: str) -> str | None:
+def fetch_transcript_with_remote_actions(youtube_url: str) -> str | None:
     """
-    Uses the Scrape.do API to perform a powerful scrape of a middleman site,
-    bypassing bot detection without using local resources.
+    Uses the Scrape.do API to remotely control a browser, performing the
+    exact steps a human would: type, click, wait, and extract.
     """
-    st.info("🚀 Using professional scraping service (Scrape.do) to bypass bot detection...")
+    st.info("🚀 Using professional scraping service (Scrape.do) with remote browser actions...")
     
-    # We will target the most reliable of the simple sites
-    target_url = f"https://youtubetotranscript.com/?v={video_id}"
+    # We will target the site from your screenshot, which requires a button click.
+    target_site_url = "https://www.youtube-transcript.io/"
     
-    # URL-encode the target URL to be safely passed as a parameter
-    encoded_url = urllib.parse.quote(target_url)
-    
-    # Construct the API request URL for Scrape.do
-    api_url = f"http://api.scrape.do?token={scrapedo_api_key}&url={encoded_url}"
+    # --- This is the script of actions for the remote browser ---
+    action_script = [
+        # Action 1: Fill the input box with our YouTube URL
+        {
+            "Action": "Fill",
+            "Selector": "#youtube-url-input", # The CSS ID of the input box
+            "Value": youtube_url
+        },
+        # Action 2: Click the "Extract transcript" button
+        {
+            "Action": "Click",
+            # The CSS selector for a button containing the text "Extract transcript"
+            "Selector": "button:contains('Extract transcript')"
+        },
+        # Action 3: Wait for the transcript to appear.
+        # We'll wait for a paragraph <p> inside the <main> section to show up.
+        {
+            "Action": "WaitSelector",
+            "WaitSelector": "main p",
+            "Timeout": 20000 # Wait up to 20 seconds
+        }
+    ]
+
+    # The action script must be converted to a JSON string and then URL-encoded
+    encoded_actions = urllib.parse.quote(json.dumps(action_script))
+
+    # Construct the full API request to Scrape.do
+    params = {
+        'token': scrapedo_api_key,
+        'url': target_site_url,
+        'render': 'true',
+        'playWithBrowser': encoded_actions
+    }
     
     try:
-        # Your app makes one simple, lightweight request to Scrape.do
-        response = requests.get(api_url, timeout=90)
-        response.raise_for_status() # Check for errors from the API
+        api_url = "https://api.scrape.do/"
+        response = requests.get(api_url, params=params, timeout=120) # Long timeout for browser actions
+        response.raise_for_status()
 
-        # Scrape.do sends back the clean HTML, ready for simple parsing
+        # Scrape.do sends back the FINAL HTML after all actions are complete
         soup = BeautifulSoup(response.text, 'lxml')
         
-        container = soup.find('div', class_='transcript-text')
-        if not container:
-            st.warning("Scrape.do successfully accessed the page, but the transcript container was not found. The site's layout may have changed.")
+        # Now we extract the text from the paragraphs that the script waited for
+        main_content = soup.find('main')
+        if not main_content:
+            st.error("Remote browser failed to find the main content area after actions.")
+            return None
+
+        paragraphs = main_content.find_all('p')
+        if not paragraphs:
+            st.warning("Remote browser actions completed, but no transcript paragraphs were found.")
             return None
             
-        transcript_text = " ".join(p.get_text(strip=True) for p in container.find_all('p'))
+        transcript_text = " ".join(p.get_text(strip=True) for p in paragraphs)
         
         if transcript_text and len(transcript_text) > 50:
-            st.success("✅ Success! Transcript fetched via Scrape.do.")
+            st.success("✅ Success! Transcript fetched via remote browser automation.")
             return transcript_text
         else:
-            st.warning("Found transcript container, but it was empty.")
+            st.warning("Remote browser ran, but the transcript was empty.")
             return None
 
     except requests.exceptions.RequestException as e:
         st.error(f"Failed to connect to Scrape.do API or the request timed out. Error: {e}")
         return None
     except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
+        st.error(f"An unexpected error occurred during remote automation: {e}")
         return None
 
 # ----------------------------
@@ -112,10 +146,10 @@ if query:
     external_docs = []
     
     yt_url, yt_id = extract_youtube_info(query)
-    if yt_id:
-        with st.spinner("Attempting to fetch YouTube transcript using professional scraping service..."):
-            # --- MODIFIED: Call the new, robust Scrape.do function ---
-            yt_text = fetch_transcript_with_scrapedo(yt_id)
+    if yt_url and yt_id: # Check for URL as well now
+        with st.spinner("Attempting to fetch YouTube transcript using remote browser automation..."):
+            # --- MODIFIED: Call the new, robust Scrape.do remote control function ---
+            yt_text = fetch_transcript_with_remote_actions(yt_url)
             if yt_text:
                 external_docs.append(Document(page_content=yt_text, metadata={"source": "YouTube"}))
                 query = query.replace(yt_url, "").strip() or "Summarize the video."
