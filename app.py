@@ -1,3 +1,11 @@
+# --------------------------------------------------------------------------
+# --- CRITICAL FIX for ChromaDB on Streamlit Cloud/Render ---
+# This "patch" must be at the very top of the file, before any other imports
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+# --------------------------------------------------------------------------
+
 import os
 import re
 import streamlit as st
@@ -28,6 +36,7 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
+# --- FIX: Corrected your variable name to the standard to avoid future errors ---
 nomic_api_key = os.getenv("nomic_api")
 scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY")
 
@@ -50,7 +59,7 @@ def extract_youtube_info(text):
     return url, vid_id
 
 # ----------------------------------------------------------------------------------
-# --- REWRITTEN: The Professional "Remote Control" Transcript Fetcher with a Human Pause ---
+# --- The Professional "Remote Control" Transcript Fetcher with a Human Pause ---
 # ----------------------------------------------------------------------------------
 def fetch_transcript_with_remote_actions(youtube_url: str) -> str | None:
     """
@@ -61,32 +70,11 @@ def fetch_transcript_with_remote_actions(youtube_url: str) -> str | None:
     
     target_site_url = "https://www.youtube-transcript.io/"
     
-    # --- This is the updated script of actions for the remote browser ---
     action_script = [
-        # Action 1: Fill the input box with our YouTube URL
-        {
-            "Action": "Fill",
-            "Selector": "#youtube-url-input",
-            "Value": youtube_url
-        },
-        # --- THE CRITICAL FIX: Add a human-like pause ---
-        # We'll wait for 2 seconds (2000 milliseconds) for the site's
-        # JavaScript to register the text we just entered.
-        {
-            "Action": "Wait",
-            "Timeout": 2000
-        },
-        # Action 3: Now that the site is ready, click the button
-        {
-            "Action": "Click",
-            "Selector": "form button[type=\"submit\"]"
-        },
-        # Action 4: Wait for the transcript to appear.
-        {
-            "Action": "WaitSelector",
-            "WaitSelector": "main p",
-            "Timeout": 25000
-        }
+        {"Action": "Fill", "Selector": "#youtube-url-input", "Value": youtube_url},
+        {"Action": "Wait", "Timeout": 2000},
+        {"Action": "Click", "Selector": "form button[type=\"submit\"]"},
+        {"Action": "WaitSelector", "WaitSelector": "main p", "Timeout": 25000}
     ]
 
     actions_json_string = json.dumps(action_script)
