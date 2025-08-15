@@ -58,23 +58,24 @@ def extract_youtube_info(text):
     return url, vid_id
 
 # ----------------------------
-# HELPER FUNCTION 2: The Professional "Remote Control" Transcript Fetcher for NoteGPT.io
+# HELPER FUNCTION 2: The Professional "Remote Control" Transcript Fetcher for NoteGPT.io (v2)
 # ----------------------------
 def fetch_transcript_with_remote_actions(youtube_url: str) -> str | None:
     st.info("🚀 Using professional scraping service (Scrape.do) to automate NoteGPT.io...")
     
-    target_site_url = "https://notegpt.io/youtube-transcript-generator"
+    target_site_url = "https://tactiq.io/tools/youtube-transcript"
     
-    # --- This is the new script of actions custom-built for NoteGPT.io ---
+    # --- This is the UPDATED script of actions based on your new screenshot ---
     action_script = [
-        # Action 1: Fill the input box with our YouTube URL
+        # Action 1: Fill the input box
         { "Action": "Fill", "Selector": "input[placeholder*='Enter the YouTube video']", "Value": youtube_url },
         # Action 2: Add a human-like pause
         { "Action": "Wait", "Timeout": 1500 },
-        # Action 3: Click the "Generate Transcript" button using its specific class
+        # Action 3: Click the "Generate Transcript" button
         { "Action": "Click", "Selector": "button.summary-btn" },
-        # Action 4: Wait for the transcript summary container to appear.
-        { "Action": "WaitSelector", "WaitSelector": ".summary-container", "Timeout": 45000 }
+        # --- THE CRITICAL FIX: Wait for the NEW results container ---
+        # We will wait for the 'Workspace' div that holds the video and transcript tabs.
+        { "Action": "WaitSelector", "WaitSelector": "div.workspace", "Timeout": 45000 }
     ]
 
     actions_json_string = json.dumps(action_script)
@@ -93,12 +94,12 @@ def fetch_transcript_with_remote_actions(youtube_url: str) -> str | None:
 
         soup = BeautifulSoup(response.text, 'lxml')
         # --- Find the final container after the wait ---
-        transcript_container = soup.find('div', class_='summary-container')
+        transcript_container = soup.find('div', class_='workspace')
         if not transcript_container:
-            st.error("Remote browser failed to find the transcript container after actions. NoteGPT.io's layout may have changed.")
+            st.error("Remote browser failed to find the 'workspace' container after actions. NoteGPT.io's layout may have changed again.")
             return None
             
-        # Extract all text from the container
+        # The transcript text is now inside the 'workspace' container. We'll grab all of it.
         transcript_text = transcript_container.get_text(separator=' ', strip=True)
         
         if transcript_text and len(transcript_text) > 50:
