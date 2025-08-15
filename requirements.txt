@@ -1,7 +1,7 @@
 # Server
 streamlit==1.38.0
 python-dotenv==1.0.1
-
+pysqlite3-binary
 # LangChain & Integrations
 langchain==0.2.14
 langchain-community==0.2.12
