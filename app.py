@@ -15,14 +15,12 @@ from PIL import Image
 from pathlib import Path
 from langchain_nomic import NomicEmbeddings
 
-# --- NEW IMPORTS FOR THE SCRAPER GAUNTLET ---
-import time
-import random
-import cloudscraper # A special library to bypass services like Cloudflare
+# --- NEW IMPORTS for the Professional Scraping API ---
+import requests
 from bs4 import BeautifulSoup
+import urllib.parse
 
 # --- FIX for Render Tesseract ---
-# This line is crucial for Tesseract to work on Render's environment
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 # ----------------------------
@@ -30,18 +28,19 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-# --- FIX: Your previous code had a typo here, corrected to the standard name ---
-nomic_api_key = os.getenv("nomic_api")
+# --- FIX: Corrected your variable name to the standard ---
+nomic_api_key = os.getenv("NOMIC_API_KEY")
+scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY") # <-- Your new API key
 
-if not groq_api_key or not nomic_api_key:
-    st.error("API keys for Groq and Nomic must be set in your environment secrets.")
+if not all([groq_api_key, nomic_api_key, scrapedo_api_key]):
+    st.error("API keys for Groq, Nomic, and Scrape.do must be set in your environment secrets.")
     st.stop()
 
 llm = ChatGroq(model="llama3-8b-8192", api_key=groq_api_key)
 embeddings_model = NomicEmbeddings(model="nomic-embed-text-v1.5", nomic_api_key=nomic_api_key)
 
 # ----------------------------
-# Helper function: Extract YouTube Info (Unchanged)
+# Extract YouTube ID & Link (Unchanged)
 # ----------------------------
 def extract_youtube_info(text):
     url_match = re.search(r"(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[a-zA-Z0-9_-]{11}\S*)", text)
@@ -51,79 +50,53 @@ def extract_youtube_info(text):
     vid_id = id_match.group(1) if id_match else None
     return url, vid_id
 
-# -------------------------------------------------------------
-# --- NEW: THE FULL 5-STAGE "SCRAPER GAUNTLET" ---
-# -------------------------------------------------------------
-def fetch_transcript_via_scraping_gauntlet(video_id: str) -> str | None:
+# ----------------------------------------------------------------------------------
+# --- NEW: The Professional, Resource-Friendly Transcript Fetcher using Scrape.do ---
+# ----------------------------------------------------------------------------------
+def fetch_transcript_with_scrapedo(video_id: str) -> str | None:
     """
-    Attempts to scrape a YouTube transcript by running a gauntlet of third-party websites.
+    Uses the Scrape.do API to perform a powerful scrape of a middleman site,
+    bypassing bot detection without using local resources.
     """
-    scraper = cloudscraper.create_scraper()
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    }
+    st.info("🚀 Using professional scraping service (Scrape.do) to bypass bot detection...")
+    
+    # We will target the most reliable of the simple sites
+    target_url = f"https://youtubetotranscript.com/?v={video_id}"
+    
+    # URL-encode the target URL to be safely passed as a parameter
+    encoded_url = urllib.parse.quote(target_url)
+    
+    # Construct the API request URL for Scrape.do
+    api_url = f"http://api.scrape.do?token={scrapedo_api_key}&url={encoded_url}"
+    
+    try:
+        # Your app makes one simple, lightweight request to Scrape.do
+        response = requests.get(api_url, timeout=90)
+        response.raise_for_status() # Check for errors from the API
 
-    # --- We define a specific scraper function for each website's unique HTML ---
-    def _scrape_youtubetotranscript(sid):
-        url = f"https://youtubetotranscript.com/?v={sid}"
-        st.info(f"Gauntlet Stage 1: Trying youtubetotranscript.com...")
-        response = scraper.get(url, headers=headers, timeout=25)
-        response.raise_for_status()
+        # Scrape.do sends back the clean HTML, ready for simple parsing
         soup = BeautifulSoup(response.text, 'lxml')
+        
         container = soup.find('div', class_='transcript-text')
-        if not container: return None
-        return " ".join(p.get_text(strip=True) for p in container.find_all('p'))
-
-    def _scrape_youtubetranscript_io(sid):
-        url = f"https://www.youtube-transcript.io/transcript/?v={sid}"
-        st.info(f"Gauntlet Stage 2: Trying youtube-transcript.io...")
-        response = scraper.get(url, headers=headers, timeout=25)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'lxml')
-        paragraphs = soup.find_all('p')
-        if not paragraphs: return None
-        return " ".join(p.get_text(strip=True) for p in paragraphs)
-
-    # The following sites are modern JavaScript apps and CANNOT be scraped this way.
-    # These functions are designed to fail gracefully.
-    def _scrape_tactiq(sid):
-        st.info(f"Gauntlet Stage 3: Trying tactiq.io (Known to be unscrapable)...")
-        return None
-
-    def _scrape_notegpt(sid):
-        st.info(f"Gauntlet Stage 4: Trying notegpt.io (Known to be unscrapable)...")
-        return None
-
-    def _scrape_komeai(sid):
-        st.info(f"Gauntlet Stage 5: Trying kome.ai (Known to be unscrapable)...")
-        return None
-    
-    # Run the Gauntlet in order of most likely to succeed
-    scrapers_to_try = [
-        _scrape_youtubetotranscript,
-        _scrape_youtubetranscript_io,
-        _scrape_tactiq,
-        _scrape_notegpt,
-        _scrape_komeai,
-    ]
-    
-    for scrape_function in scrapers_to_try:
-        try:
-            time.sleep(random.uniform(2.0, 4.0)) # Human-like pause
-            transcript = scrape_function(video_id)
-            if transcript and len(transcript) > 100:
-                # --- THIS IS THE SUCCESS MESSAGE YOU WANTED ---
-                site_name = scrape_function.__name__.replace("_scrape_", "").replace("_", ".")
-                st.success(f"✅ Web scraping successful! Fetched transcript from: {site_name}")
-                return transcript
-            else:
-                st.warning(f"...{scrape_function.__name__} failed or returned empty content.")
-        except Exception as e:
-            st.warning(f"...{scrape_function.__name__} failed with an error: {str(e)[:100]}...")
-            continue
+        if not container:
+            st.warning("Scrape.do successfully accessed the page, but the transcript container was not found. The site's layout may have changed.")
+            return None
             
-    st.error("❌ All scraping attempts failed. The websites may be blocking us, have changed their layout, or the video has no transcript.")
-    return None
+        transcript_text = " ".join(p.get_text(strip=True) for p in container.find_all('p'))
+        
+        if transcript_text and len(transcript_text) > 50:
+            st.success("✅ Success! Transcript fetched via Scrape.do.")
+            return transcript_text
+        else:
+            st.warning("Found transcript container, but it was empty.")
+            return None
+
+    except requests.exceptions.RequestException as e:
+        st.error(f"Failed to connect to Scrape.do API or the request timed out. Error: {e}")
+        return None
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {e}")
+        return None
 
 # ----------------------------
 # Streamlit UI & Main Logic
@@ -140,9 +113,9 @@ if query:
     
     yt_url, yt_id = extract_youtube_info(query)
     if yt_id:
-        with st.spinner("Attempting to fetch YouTube transcript via scraping gauntlet..."):
-            # --- MODIFIED: The old fetch_youtube_transcript is gone. We now call the gauntlet. ---
-            yt_text = fetch_transcript_via_scraping_gauntlet(yt_id)
+        with st.spinner("Attempting to fetch YouTube transcript using professional scraping service..."):
+            # --- MODIFIED: Call the new, robust Scrape.do function ---
+            yt_text = fetch_transcript_with_scrapedo(yt_id)
             if yt_text:
                 external_docs.append(Document(page_content=yt_text, metadata={"source": "YouTube"}))
                 query = query.replace(yt_url, "").strip() or "Summarize the video."
