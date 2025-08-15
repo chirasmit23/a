@@ -25,7 +25,7 @@ from langchain_nomic import NomicEmbeddings
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-nomic_api_key = os.getenv("NOMIC_API_KEY")
+nomic_api_key = os.getenv("nomic_api")
 
 if not groq_api_key or not nomic_api_key:
     st.error("API keys for Groq and Nomic must be set in your environment secrets.")
