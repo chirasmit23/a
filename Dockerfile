@@ -1,24 +1,23 @@
 FROM python:3.10-slim
 
-# Set work directory
-WORKDIR /app
-
-# Install system dependencies for Tesseract
+# Install system dependencies including Tesseract OCR
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     libtesseract-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
+# Set working directory
+WORKDIR /app
+
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the app code
+# Copy the rest of the app
 COPY . .
 
-# Expose the port
+# Expose Streamlit port
 EXPOSE 7860
 
-# Run the Streamlit app
+# Run Streamlit
 CMD ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0"]
