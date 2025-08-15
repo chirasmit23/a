@@ -36,7 +36,7 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
 # --- FIX: Corrected your variable name to the standard ---
-nomic_api_key = os.getenv("NOMIC_API_KEY")
+nomic_api_key = os.getenv("nomic_api")
 scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY")
 
 if not all([groq_api_key, nomic_api_key, scrapedo_api_key]):
