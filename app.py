@@ -23,7 +23,6 @@ from PIL import Image
 from pathlib import Path
 from langchain_nomic import NomicEmbeddings
 
-# --- NEW IMPORTS for the Professional Scraping API ---
 import requests
 from bs4 import BeautifulSoup
 import json
@@ -57,39 +56,33 @@ def extract_youtube_info(text):
     vid_id = id_match.group(1) if id_match else None
     return url, vid_id
 
-# ----------------------------------------------------------------------------------
-# --- REWRITTEN YOUTUBE FETCHER: The Final, Correct, Professional Method ---
-# --- Using Scrape.do to directly automate YouTube ---
-# ----------------------------------------------------------------------------------
+# ----------------------------
+# HELPER FUNCTION 2: The Professional "Remote Control" for TubeTranscript.com
+# ----------------------------
 def fetch_youtube_transcript(youtube_url: str) -> str | None:
-    """
-    Uses the Scrape.do API to remotely control a browser and extract the
-    transcript directly from the YouTube page itself.
-    """
-    st.info("🚀 Using professional scraping service to automate YouTube directly...")
+    st.info("🚀 Using professional scraping service (Scrape.do) to automate tubetranscript.com...")
     
-    # --- This is the script of actions for the remote browser on YouTube.com ---
+    target_site_url = "https://www.tubetranscript.com/en"
+    
+    # --- This is the new script of actions custom-built for tubetranscript.com ---
     action_script = [
-        # Action 1: Click the "More" button in the description to reveal the "Show transcript" button.
-        # YouTube's buttons often have complex IDs, so we target by the text content.
-        { "Action": "Click", "Selector": "#description-inline-expander button" },
-        # Action 2: Wait for the "Show transcript" button to appear.
-        { "Action": "WaitSelector", "WaitSelector": "yt-button-renderer:contains('Show transcript')", "Timeout": 10000 },
-        # Action 3: Click the "Show transcript" button.
-        { "Action": "Click", "Selector": "yt-button-renderer:contains('Show transcript')" },
-        # Action 4: Wait for the transcript segments to load on the right-hand side.
-        # The transcript lines have a specific element tag name.
-        { "Action": "WaitSelector", "WaitSelector": "ytd-transcript-segment-renderer", "Timeout": 20000 }
+        # Action 1: Fill the input box using its stable ID
+        { "Action": "Fill", "Selector": "#video-url-input", "Value": youtube_url },
+        # Action 2: Add a human-like pause
+        { "Action": "Wait", "Timeout": 1000 },
+        # Action 3: Click the "Transcribe" button using its stable ID
+        { "Action": "Click", "Selector": "#submit-btn" },
+        # Action 4: Wait for the transcript container to appear, using its stable ID
+        { "Action": "WaitSelector", "WaitSelector": "#transcript-container", "Timeout": 45000 }
     ]
 
     actions_json_string = json.dumps(action_script)
 
     params = {
         'token': scrapedo_api_key,
-        'url': youtube_url,
-        'render': 'true', # Must use a browser
-        'playWithBrowser': actions_json_string,
-        'super': 'true' # Use a high-quality residential proxy for YouTube
+        'url': target_site_url,
+        'render': 'true',
+        'playWithBrowser': actions_json_string
     }
     
     try:
@@ -98,26 +91,25 @@ def fetch_youtube_transcript(youtube_url: str) -> str | None:
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, 'lxml')
-        
-        # After the actions, the transcript segments will be on the page.
-        transcript_segments = soup.find_all('yt-formatted-string', class_='ytd-transcript-segment-renderer')
-        
-        if not transcript_segments:
-            st.error("Remote browser failed to find transcript segments after actions. YouTube's layout may have changed.")
+        # --- Find the final container after the wait ---
+        transcript_container = soup.find('div', id='transcript-container')
+        if not transcript_container:
+            st.error("Remote browser failed to find the transcript container after actions. tubetranscript.com's layout may have changed.")
             return None
             
-        # Join the text from all the found segments.
-        transcript_text = " ".join(seg.get_text(strip=True) for seg in transcript_segments)
+        # The text is inside paragraph tags within the container
+        paragraphs = transcript_container.find_all('p')
+        transcript_text = " ".join(p.get_text(strip=True) for p in paragraphs)
         
-        if transcript_text and len(transcript_text) > 20:
-            st.success("✅ Success! Transcript fetched directly from YouTube via remote automation.")
+        if transcript_text and len(transcript_text) > 50:
+            st.success("✅ Success! Transcript fetched via remote automation of tubetranscript.com.")
             return transcript_text
         else:
             st.warning("Remote browser ran, but the transcript was empty.")
             return None
 
     except Exception as e:
-        st.error(f"An unexpected error occurred during direct YouTube automation: {e}")
+        st.error(f"An unexpected error occurred during remote automation: {e}")
         return None
 
 # ----------------------------
@@ -136,7 +128,7 @@ if query:
     
     yt_url, yt_id = extract_youtube_info(query)
     if yt_url and yt_id:
-        with st.spinner("Attempting to fetch YouTube transcript..."):
+        with st.spinner("Attempting to fetch YouTube transcript using remote browser automation..."):
             yt_text = fetch_youtube_transcript(yt_url)
             if yt_text:
                 external_docs.append(Document(page_content=yt_text, metadata={"source": "YouTube"}))
