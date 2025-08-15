@@ -23,9 +23,10 @@ from PIL import Image
 from pathlib import Path
 from langchain_nomic import NomicEmbeddings
 
+# --- NEW IMPORTS for the Professional Scraping API ---
 import requests
 from bs4 import BeautifulSoup
-import json
+import urllib.parse
 
 # --- FIX for Render Tesseract ---
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
@@ -35,7 +36,8 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-nomic_api_key = os.getenv("nomic_api") # Corrected variable name
+# --- FIX: Corrected your variable name to the standard ---
+nomic_api_key = os.getenv("nomic_api")
 scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY")
 
 if not all([groq_api_key, nomic_api_key, scrapedo_api_key]):
@@ -60,21 +62,18 @@ def extract_youtube_info(text):
 # --- REWRITTEN YOUTUBE FETCHER: The Definitive Middleman Scraper for TubeTranscript.com ---
 # --- Based on your flawless HTML analysis ---
 # ----------------------------------------------------------------------------------
-def fetch_youtube_transcript(video_id: str, youtube_url: str) -> str | None:
+def fetch_youtube_transcript(video_id: str) -> str | None:
     st.info("🚀 Using professional scraping service (Scrape.do) to automate tubetranscript.com...")
     
     # --- This is the new, correct plan based on your evidence ---
-    # The site navigates to a new page, so a simple click script won't work.
-    # We will simulate the form submission by constructing the results URL ourselves.
-    # This is faster and more reliable.
+    # We will simulate the form submission by navigating directly to the results URL.
     results_page_url = f"https://www.tubetranscript.com/en/watch?v={video_id}"
-    
     st.info(f"Navigating directly to results page: {results_page_url}")
 
     params = {
         'token': scrapedo_api_key,
         'url': results_page_url,
-        'render': 'false', # We don't need a full browser, just the raw HTML
+        'render': 'false', # The transcript is in the raw HTML, so no JS rendering is needed. This is faster.
     }
     
     try:
@@ -82,10 +81,9 @@ def fetch_youtube_transcript(video_id: str, youtube_url: str) -> str | None:
         response = requests.get(api_url, params=params, timeout=120)
         response.raise_for_status()
 
-        # Scrape.do sends back the HTML of the results page
         soup = BeautifulSoup(response.text, 'lxml')
         
-        # --- Find the hidden textarea with the golden ticket ID ---
+        # --- Find the hidden textarea with the golden ticket ID you discovered ---
         transcript_textarea = soup.find('textarea', id='restorealworkTranscriptData')
         
         if not transcript_textarea:
@@ -122,7 +120,7 @@ if query:
     yt_url, yt_id = extract_youtube_info(query)
     if yt_url and yt_id:
         with st.spinner("Attempting to fetch YouTube transcript..."):
-            yt_text = fetch_youtube_transcript(yt_id, yt_url) # Pass both id and url
+            yt_text = fetch_youtube_transcript(yt_id) # Only need the ID now
             if yt_text:
                 external_docs.append(Document(page_content=yt_text, metadata={"source": "YouTube"}))
                 query = query.replace(yt_url, "").strip()
