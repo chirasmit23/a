@@ -23,7 +23,6 @@ from PIL import Image
 from pathlib import Path
 from langchain_nomic import NomicEmbeddings
 
-# --- NEW IMPORTS for the Professional Scraping API ---
 import requests
 from bs4 import BeautifulSoup
 import urllib.parse
@@ -36,7 +35,6 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-# --- FIX: Corrected your variable name to the standard ---
 nomic_api_key = os.getenv("nomic_api")
 scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY")
 
@@ -59,21 +57,20 @@ def extract_youtube_info(text):
     return url, vid_id
 
 # ----------------------------------------------------------------------------------
-# --- REWRITTEN YOUTUBE FETCHER: The Definitive Middleman Scraper for TubeTranscript.com ---
+# --- REWRITTEN YOUTUBE FETCHER: The Definitive Middleman Scraper for TubeTranscript.com (v2) ---
 # --- Based on your flawless HTML analysis ---
 # ----------------------------------------------------------------------------------
 def fetch_youtube_transcript(video_id: str) -> str | None:
     st.info("🚀 Using professional scraping service (Scrape.do) to automate tubetranscript.com...")
     
-    # --- This is the new, correct plan based on your evidence ---
-    # We will simulate the form submission by navigating directly to the results URL.
+    # We navigate directly to the results URL, as you discovered.
     results_page_url = f"https://www.tubetranscript.com/en/watch?v={video_id}"
     st.info(f"Navigating directly to results page: {results_page_url}")
 
     params = {
         'token': scrapedo_api_key,
         'url': results_page_url,
-        'render': 'false', # The transcript is in the raw HTML, so no JS rendering is needed. This is faster.
+        'render': 'true', # We use render=true to be safe, in case of JS checks.
     }
     
     try:
@@ -83,14 +80,14 @@ def fetch_youtube_transcript(video_id: str) -> str | None:
 
         soup = BeautifulSoup(response.text, 'lxml')
         
-        # --- Find the hidden textarea with the golden ticket ID you discovered ---
-        transcript_textarea = soup.find('textarea', id='restorealworkTranscriptData')
+        # --- THE CRITICAL FIX: Find the correct container ID you discovered ---
+        transcript_container = soup.find('div', id='main-transcript-content')
         
-        if not transcript_textarea:
-            st.error("Scraping succeeded, but could not find the hidden transcript textarea ('#restorealworkTranscriptData'). The site's layout may have changed.")
+        if not transcript_container:
+            st.error("Scraping succeeded, but could not find the transcript container ('#main-transcript-content'). The site's layout may have changed again.")
             return None
             
-        transcript_text = transcript_textarea.get_text(strip=True)
+        transcript_text = transcript_container.get_text(strip=True)
         
         if transcript_text and len(transcript_text) > 50:
             st.success("✅ Success! Transcript fetched by scraping tubetranscript.com.")
