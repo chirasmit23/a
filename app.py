@@ -23,10 +23,10 @@ from PIL import Image
 from pathlib import Path
 from langchain_nomic import NomicEmbeddings
 
-# --- NEW IMPORTS for the Professional Solution ---
-import subprocess
-import shutil
-import webvtt
+# --- NEW IMPORTS for the Professional Scraping API ---
+import requests
+from bs4 import BeautifulSoup
+import json
 
 # --- FIX for Render Tesseract ---
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
@@ -36,11 +36,11 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 # ----------------------------
 load_dotenv()
 groq_api_key = os.getenv("groq_apikey")
-# --- FIX: Corrected your variable name to the standard ---
 nomic_api_key = os.getenv("nomic_api")
+scrapedo_api_key = os.getenv("SCRAPEDO_API_KEY")
 
-if not groq_api_key or not nomic_api_key:
-    st.error("API keys for Groq and Nomic must be set in your environment secrets.")
+if not all([groq_api_key, nomic_api_key, scrapedo_api_key]):
+    st.error("API keys for Groq, Nomic, and Scrape.do must be set in your environment secrets.")
     st.stop()
 
 llm = ChatGroq(model="llama3-8b-8192", api_key=groq_api_key)
@@ -57,58 +57,68 @@ def extract_youtube_info(text):
     vid_id = id_match.group(1) if id_match else None
     return url, vid_id
 
-# --------------------------------------------------------------------------
-# --- REWRITTEN YOUTUBE FETCHER: The Ultimate Professional Method ---
-# --- yt-dlp + Scrape.do Proxy Mode ---
-# --------------------------------------------------------------------------
-def fetch_youtube_transcript(video_id, url):
+# ----------------------------------------------------------------------------------
+# --- REWRITTEN YOUTUBE FETCHER: The Final, Correct, Professional Method ---
+# --- Using Scrape.do to directly automate YouTube ---
+# ----------------------------------------------------------------------------------
+def fetch_youtube_transcript(youtube_url: str) -> str | None:
     """
-    Fetches a YouTube transcript using the most robust method available:
-    yt-dlp combined with Scrape.do's Proxy Mode to bypass bot detection.
+    Uses the Scrape.do API to remotely control a browser and extract the
+    transcript directly from the YouTube page itself.
     """
-    # --- Load Scrape.do proxy credentials from Render secrets ---
-    proxy_username = st.secrets.get("SCRAPEDO_USERNAME") # This will be your API Token
-    proxy_password = st.secrets.get("SCRAPEDO_PASSWORD") # This will be "render=false"
-    proxy_host_port = st.secrets.get("SCRAPEDO_HOST_PORT") # This will be "proxy.scrape.do:8080"
-
-    if not all([proxy_username, proxy_password, proxy_host_port]):
-        st.error("❌ Scrape.do Proxy Mode credentials are not configured in secrets.")
-        return None
-
-    st.info("🚀 Using professional proxy (Scrape.do Proxy Mode) to fetch transcript directly from YouTube...")
-    proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_host_port}"
+    st.info("🚀 Using professional scraping service to automate YouTube directly...")
     
-    output_template = f"{video_id}"
-    vtt_path = f"{video_id}.en.vtt"
-
-    cmd = [
-        "yt-dlp",
-        "--skip-download",
-        "--write-auto-sub",
-        "--sub-lang", "en",
-        "--sub-format", "vtt",
-        "-o", output_template,
-        "--proxy", proxy_url, # The key to success
-        url
+    # --- This is the script of actions for the remote browser on YouTube.com ---
+    action_script = [
+        # Action 1: Click the "More" button in the description to reveal the "Show transcript" button.
+        # YouTube's buttons often have complex IDs, so we target by the text content.
+        { "Action": "Click", "Selector": "#description-inline-expander button" },
+        # Action 2: Wait for the "Show transcript" button to appear.
+        { "Action": "WaitSelector", "WaitSelector": "yt-button-renderer:contains('Show transcript')", "Timeout": 10000 },
+        # Action 3: Click the "Show transcript" button.
+        { "Action": "Click", "Selector": "yt-button-renderer:contains('Show transcript')" },
+        # Action 4: Wait for the transcript segments to load on the right-hand side.
+        # The transcript lines have a specific element tag name.
+        { "Action": "WaitSelector", "WaitSelector": "ytd-transcript-segment-renderer", "Timeout": 20000 }
     ]
 
+    actions_json_string = json.dumps(action_script)
+
+    params = {
+        'token': scrapedo_api_key,
+        'url': youtube_url,
+        'render': 'true', # Must use a browser
+        'playWithBrowser': actions_json_string,
+        'super': 'true' # Use a high-quality residential proxy for YouTube
+    }
+    
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120) 
-        if not os.path.exists(vtt_path):
-            st.warning("Proxy succeeded, but yt-dlp did not find or produce a transcript file for this video.")
+        api_url = "https://api.scrape.do/"
+        response = requests.get(api_url, params=params, timeout=120)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'lxml')
+        
+        # After the actions, the transcript segments will be on the page.
+        transcript_segments = soup.find_all('yt-formatted-string', class_='ytd-transcript-segment-renderer')
+        
+        if not transcript_segments:
+            st.error("Remote browser failed to find transcript segments after actions. YouTube's layout may have changed.")
             return None
-        transcript_text = "\n".join(caption.text for caption in webvtt.read(vtt_path))
-        st.success("✅ Transcript fetched successfully using Scrape.do Proxy Mode!")
-        return transcript_text.strip() or None
+            
+        # Join the text from all the found segments.
+        transcript_text = " ".join(seg.get_text(strip=True) for seg in transcript_segments)
+        
+        if transcript_text and len(transcript_text) > 20:
+            st.success("✅ Success! Transcript fetched directly from YouTube via remote automation.")
+            return transcript_text
+        else:
+            st.warning("Remote browser ran, but the transcript was empty.")
+            return None
+
     except Exception as e:
-        st.error(f"The proxy method failed. Check credentials/parameters. Error: {e}")
+        st.error(f"An unexpected error occurred during direct YouTube automation: {e}")
         return None
-    finally:
-        # Cleanup any files yt-dlp might create
-        if os.path.exists(vtt_path):
-            os.remove(vtt_path)
-        if os.path.exists(f"{video_id}.info.json"):
-            os.remove(f"{video_id}.info.json")
 
 # ----------------------------
 # Streamlit UI & Main Logic
@@ -126,9 +136,8 @@ if query:
     
     yt_url, yt_id = extract_youtube_info(query)
     if yt_url and yt_id:
-        with st.spinner("Fetching YouTube transcript..."):
-            # --- We now call the final, robust function ---
-            yt_text = fetch_youtube_transcript(yt_id, yt_url)
+        with st.spinner("Attempting to fetch YouTube transcript..."):
+            yt_text = fetch_youtube_transcript(yt_url)
             if yt_text:
                 external_docs.append(Document(page_content=yt_text, metadata={"source": "YouTube"}))
                 query = query.replace(yt_url, "").strip()
