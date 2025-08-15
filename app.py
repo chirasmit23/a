@@ -18,7 +18,6 @@ from langchain_nomic import NomicEmbeddings
 # --- NEW IMPORTS for the Professional Scraping API ---
 import requests
 from bs4 import BeautifulSoup
-import urllib.parse
 import json # To create the action script
 
 # --- FIX for Render Tesseract ---
@@ -51,61 +50,60 @@ def extract_youtube_info(text):
     return url, vid_id
 
 # ----------------------------------------------------------------------------------
-# --- NEW: The Professional "Remote Control" Transcript Fetcher using Scrape.do ---
+# --- REWRITTEN: The Professional "Remote Control" Transcript Fetcher with a Human Pause ---
 # ----------------------------------------------------------------------------------
 def fetch_transcript_with_remote_actions(youtube_url: str) -> str | None:
     """
     Uses the Scrape.do API to remotely control a browser, performing the
-    exact steps a human would: type, click, wait, and extract.
+    exact steps a human would: type, PAUSE, click, wait, and extract.
     """
     st.info("🚀 Using professional scraping service (Scrape.do) with remote browser actions...")
     
-    # We will target the site from your screenshot, which requires a button click.
     target_site_url = "https://www.youtube-transcript.io/"
     
-    # --- This is the script of actions for the remote browser ---
+    # --- This is the updated script of actions for the remote browser ---
     action_script = [
         # Action 1: Fill the input box with our YouTube URL
         {
             "Action": "Fill",
-            "Selector": "#youtube-url-input", # The CSS ID of the input box
+            "Selector": "#youtube-url-input",
             "Value": youtube_url
         },
-        # Action 2: Click the "Extract transcript" button
+        # --- THE CRITICAL FIX: Add a human-like pause ---
+        # We'll wait for 2 seconds (2000 milliseconds) for the site's
+        # JavaScript to register the text we just entered.
+        {
+            "Action": "Wait",
+            "Timeout": 2000
+        },
+        # Action 3: Now that the site is ready, click the button
         {
             "Action": "Click",
-            # The CSS selector for a button containing the text "Extract transcript"
-            "Selector": "button:contains('Extract transcript')"
+            "Selector": "form button[type=\"submit\"]"
         },
-        # Action 3: Wait for the transcript to appear.
-        # We'll wait for a paragraph <p> inside the <main> section to show up.
+        # Action 4: Wait for the transcript to appear.
         {
             "Action": "WaitSelector",
             "WaitSelector": "main p",
-            "Timeout": 20000 # Wait up to 20 seconds
+            "Timeout": 25000
         }
     ]
 
-    # The action script must be converted to a JSON string and then URL-encoded
-    encoded_actions = urllib.parse.quote(json.dumps(action_script))
+    actions_json_string = json.dumps(action_script)
 
-    # Construct the full API request to Scrape.do
     params = {
         'token': scrapedo_api_key,
         'url': target_site_url,
         'render': 'true',
-        'playWithBrowser': encoded_actions
+        'playWithBrowser': actions_json_string
     }
     
     try:
         api_url = "https://api.scrape.do/"
-        response = requests.get(api_url, params=params, timeout=120) # Long timeout for browser actions
+        response = requests.get(api_url, params=params, timeout=120)
         response.raise_for_status()
 
-        # Scrape.do sends back the FINAL HTML after all actions are complete
         soup = BeautifulSoup(response.text, 'lxml')
-        
-        # Now we extract the text from the paragraphs that the script waited for
         main_content = soup.find('main')
         if not main_content:
             st.error("Remote browser failed to find the main content area after actions.")
@@ -126,7 +124,10 @@ def fetch_transcript_with_remote_actions(youtube_url: str) -> str | None:
             return None
 
     except requests.exceptions.RequestException as e:
-        st.error(f"Failed to connect to Scrape.do API or the request timed out. Error: {e}")
+        if e.response is not None and e.response.status_code == 400:
+            st.error("The API request was rejected as a 'Bad Request'. The action script or parameters may be invalid.")
+        else:
+            st.error(f"Failed to connect to Scrape.do API or the request timed out. Error: {e}")
         return None
     except Exception as e:
         st.error(f"An unexpected error occurred during remote automation: {e}")
@@ -146,9 +147,8 @@ if query:
     external_docs = []
     
     yt_url, yt_id = extract_youtube_info(query)
-    if yt_url and yt_id: # Check for URL as well now
+    if yt_url and yt_id:
         with st.spinner("Attempting to fetch YouTube transcript using remote browser automation..."):
-            # --- MODIFIED: Call the new, robust Scrape.do remote control function ---
             yt_text = fetch_transcript_with_remote_actions(yt_url)
             if yt_text:
                 external_docs.append(Document(page_content=yt_text, metadata={"source": "YouTube"}))
