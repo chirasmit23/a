@@ -1,55 +1,17 @@
-# --------------------------
-# 1. Base image
-# --------------------------
-FROM python:3.10
+FROM python:3.10-slim
 
-# --------------------------
-# 2. Install system dependencies
-# --------------------------
-# - tesseract-ocr for OCR
-# - ffmpeg for yt-dlp
-# - curl/wget/git for general utility
-# --------------------------
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    ffmpeg \
-    yt-dlp \
-    libtesseract-dev \
-    libgl1 \
-    libglib2.0-0 \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-# --------------------------
-# 3. Set work directory
-# --------------------------
+# Set work directory
 WORKDIR /app
 
-# --------------------------
-# 4. Copy requirements & install Python deps
-# --------------------------
+# Install dependencies
 COPY requirements.txt .
-
 RUN pip install --no-cache-dir -r requirements.txt
 
-# --------------------------
-# 5. Copy project files
-# --------------------------
+# Copy the app code
 COPY . .
 
-# --------------------------
-# 6. Environment variables
-# --------------------------
-# Render sets PORT automatically
-ENV PYTHONUNBUFFERED=1
-ENV PIP_NO_CACHE_DIR=1
+# Expose the port
+EXPOSE 7860
 
-# --------------------------
-# 7. Expose port
-# --------------------------
-EXPOSE 10000
-
-# --------------------------
-# 8. Run Streamlit app
-# --------------------------
-CMD ["streamlit", "run", "app.py", "--server.port", "10000", "--server.address", "0.0.0.0"]
+# Run the app (change this to your main file)
+CMD ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0"]
