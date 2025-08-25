@@ -19,6 +19,8 @@ regex>=2024.7.24
 tqdm>=4.66.5
 beautifulsoup4
 lxml
+docx2txt>=0.8
+
 urllib3
 # OCR & Images
 pytesseract==0.3.10
