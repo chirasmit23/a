@@ -1,9 +1,12 @@
 FROM python:3.10-slim
 
-# Install system dependencies including Tesseract OCR
+# Install system dependencies including Tesseract OCR and PortAudio
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     libtesseract-dev \
+    portaudio19-dev \
+    ffmpeg \
+    git \
  && tesseract --version \
  && rm -rf /var/lib/apt/lists/*
 
