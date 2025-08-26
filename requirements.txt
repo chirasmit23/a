@@ -1,13 +1,5 @@
-# ==============================================================================
-# Final Requirements for UltraChat Voice RAG (Corrected and Cleaned)
-# ==============================================================================
-# This file has been cleaned of duplicates and corrected for Streamlit Cloud deployment.
-# It works together with the packages.txt file to ensure all dependencies install correctly.
-# ------------------------------------------------------------------------------
-
 # CRITICAL: Specify the Python version for the Streamlit Cloud environment.
-# This resolves version conflicts with packages like streamlit-mic-recorder.
-python==3.11
+
 
 # --- Core Application Framework ---
 streamlit>=1.33.0
@@ -17,7 +9,7 @@ python-dotenv>=1.0.0
 langchain-groq>=0.1.3
 
 # --- Voice & Audio Processing ---
-# Pinned to a specific version known to be available on Streamlit Cloud to fix the deployment error.
+# Pinned to a specific version known to be available on Streamlit Cloud to fix errors.
 streamlit-mic-recorder==0.0.8
 deepgram-sdk>=3.0.0
 
@@ -32,4 +24,3 @@ docx2txt>=0.8
 Pillow>=10.0.0
 pytesseract>=0.3.10
 PyMuPDF>=1.24.0
-
