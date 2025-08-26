@@ -1,3 +1,4 @@
+# app.py
 # UltraChat — WebSearch + Synthesizer (single-file, improved ranking & semantics)
 # Save as app.py and run: streamlit run app.py
 
@@ -15,8 +16,12 @@ from dotenv import load_dotenv
 import pytesseract
 from PIL import Image
 import docx2txt
-import sounddevice as sd
-import soundfile as sf
+
+# NOTE: Removed server-side sounddevice/soundfile usage because cloud servers (Render, Heroku, etc.)
+# don't have a microphone device. Recording must happen in the browser (client) — below we embed a small
+# client-side recorder using an HTML/JS snippet and ask users to upload the recorded file.
+# import sounddevice as sd
+# import soundfile as sf
 
 # Optional LLM (Groq). If not installed or not configured, model features are disabled gracefully.
 try:
@@ -71,14 +76,11 @@ def safe_rerun():
     st.rerun()
 
 # -----------------------
-# Audio helpers (optional)
+# Audio helpers (client-side recording approach)
 # -----------------------
-def record_to_wav_bytes(duration: int = 5, samplerate: int = 16000) -> bytes:
-    rec = sd.rec(int(duration * samplerate), samplerate=samplerate, channels=1, dtype="int16")
-    sd.wait()
-    buf = io.BytesIO()
-    sf.write(buf, rec, samplerate, format="WAV")
-    return buf.getvalue()
+# We no longer try to capture audio server-side. Instead we embed a small browser recorder.
+# The recorder produces a WAV blob the user can play/download. The user then uploads that file
+# via the file uploader. This avoids the "Error querying device -1" problem on Render.
 
 def deepgram_transcribe(wav_bytes: bytes) -> str:
     if not DG_KEY:
@@ -142,7 +144,6 @@ def mdn_search(q: str, max_results: int = 3) -> List[Dict]:
             out.append({"source":"MDN","title":title,"snippet":summary,"url":url})
         return out
     except Exception:
-        # fallback attempt
         try:
             guess = f"https://developer.mozilla.org/en-US/docs/Web/API/{q.replace(' ','_')}"
             r2 = requests.get(guess, timeout=4)
@@ -214,13 +215,12 @@ def arxiv_search(q: str, max_results: int = 2) -> List[Dict]:
 # -----------------------
 # Ranking & prioritization
 # -----------------------
-# Domains we prefer for definitions / tutorials
 DOMAIN_PRIORITY = {
     "geeksforgeeks.org": 2.2,
     "tutorialspoint.com": 2.0,
     "wikipedia.org": 1.8,
     "developer.mozilla.org": 2.4,
-    "stack overflow": 1.2,  # soft boost for SO titles (string matching)
+    "stack overflow": 1.2,
     "stackoverflow.com": 1.2,
 }
 
@@ -244,14 +244,12 @@ def score_result(res: Dict, query_tokens: List[str]) -> float:
     overlap = sum(1 for t in query_tokens if t in text)
     src = (res.get("source") or "").lower()
     bias = 0.0
-    # small source-based biases
     if src == "wikipedia":
         bias += 0.8
     if src == "stackoverflow":
         bias += 0.3
     if src == "mdn":
         bias += 1.0 if looks_webdev(" ".join(query_tokens)) else -0.7
-    # domain boost
     bias += domain_boost_for_url(res.get("url",""))
     return overlap + bias
 
@@ -263,12 +261,10 @@ def rank_results(results: List[Dict], query: str) -> List[Dict]:
 # Aggregator pipeline
 # -----------------------
 def websearch_pipeline(query: str, use_mdn=True, use_so=True) -> Tuple[List[Dict], List[Dict]]:
-    """Call multiple sources and return (ranked_results, docs_for_rag)."""
     if not query:
         return [], []
     results: List[Dict] = []
 
-    # collect
     w = wikipedia_summary(query)
     if w: results.append(w)
 
@@ -284,7 +280,7 @@ def websearch_pipeline(query: str, use_mdn=True, use_so=True) -> Tuple[List[Dict
 
     results.extend(arxiv_search(query, max_results=2))
 
-    # dedupe by url/title
+    # dedupe
     uniq: List[Dict] = []
     seen = set()
     for r in results:
@@ -309,34 +305,24 @@ def results_relevant(results: List[Dict], query: str) -> bool:
 # Optional snippet semantic filter (LLM-assisted if available)
 # -----------------------
 def _is_snippet_relevant_simple(snippet: str, query: str) -> bool:
-    # simple checks: must contain at least one content token from query and avoid unrelated keywords often seen in irrelevant SO posts
     if not snippet:
         return False
     q_tokens = set(re.findall(r"\w+", query.lower()))
     s_tokens = set(re.findall(r"\w+", snippet.lower()))
     if len(q_tokens & s_tokens) == 0:
         return False
-    # filter out clearly unrelated short snippets
     if len(snippet) < 40:
         return False
-    # avoid pages about unrelated tools like 'distcc', 'maven' unless query mentions them
     unrelated = {"distcc","maven","jenkins","docker"}
     if any(u in snippet.lower() for u in unrelated) and not any(u in query.lower() for u in unrelated):
         return False
     return True
 
 def is_snippet_relevant(snippet: str, query: str) -> bool:
-    """
-    Combined check: first fast/simple checks then (optionally) ask the LLM to classify snippet relevance.
-    LLM classification is used only if ChatGroq + GROQ_KEY are available and there are few snippets.
-    """
     if not _is_snippet_relevant_simple(snippet, query):
         return False
-
-    # If model is available, optionally validate (cheap classifier prompt)
     if ChatGroq and GROQ_KEY:
         try:
-            # keep the classifier prompt short and deterministic
             classifier_prompt = (
                 f"Yes or no: Does the following snippet directly help answer the question \"{query}\" "
                 f"in the context of computer science / technical explanation? Answer 'Yes' or 'No' only.\n\n"
@@ -347,7 +333,7 @@ def is_snippet_relevant(snippet: str, query: str) -> bool:
             text = out.get("output_text") if isinstance(out, dict) else getattr(out, "content", str(out))
             return "yes" in text.lower()
         except Exception:
-            return True  # on LLM failure, be permissive (keep the snippet)
+            return True
     return True
 
 # -----------------------
@@ -366,7 +352,6 @@ def _llm_invoke(prompt: str) -> str:
         return f"(LLM error: {e})"
 
 def synthesize_from_snippets(question: str, docs: List[Dict]) -> str:
-    # Filter snippets with semantic check (to avoid unrelated StackOverflow answers)
     filtered = []
     for d in docs[:20]:
         snip = d.get("snippet","")
@@ -416,6 +401,11 @@ def load_uploaded_files(upload_list) -> List[Dict]:
                 text = docx2txt.process(str(p))[:3000]
             elif f.name.lower().endswith(".txt"):
                 text = p.read_text(errors="ignore")[:3000]
+            elif f.name.lower().endswith((".wav", ".mp3", ".m4a", ".ogg")):
+                # for audio: keep raw bytes in snippet so it can be processed by ASR if desired
+                data = p.read_bytes()
+                out.append({"source": f.name, "title": f.name, "snippet": f"__AUDIO__:{len(data)}_bytes", "url": str(p)})
+                continue
             else:
                 text = pytesseract.image_to_string(Image.open(p))[:3000]
             if _clean(text):
@@ -440,26 +430,108 @@ if "messages" not in st.session_state:
 st.title("🎤 UltraChat — WebSearch on Demand")
 st.caption("Pick 'Ask' for LLM-only answers (or include uploaded docs). Pick 'WebSearch' to fetch MDN / GfG / StackOverflow / Wikipedia / DuckDuckGo / arXiv and synthesize a single source-marked answer.")
 
-# chat history
+# show chat history
 for m in st.session_state.messages:
     cls = "user-msg" if m.get("role") == "user" else "bot-msg"
     st.markdown(f"<div class='{cls}'>{m.get('content')}</div>", unsafe_allow_html=True)
 
 cols = st.columns([0.16, 0.08, 0.12, 0.52, 0.06])
 with cols[0]:
-    uploads = st.file_uploader("Upload files (optional)", type=["pdf","docx","txt","png","jpg","jpeg","webp"], accept_multiple_files=True, key="uploader_main")
+    uploads = st.file_uploader(
+        "Upload files (optional). To transcribe: upload a recorded WAV/MP3 after recording from the browser recorder below.",
+        type=["pdf","docx","txt","png","jpg","jpeg","webp","wav","mp3","m4a","ogg"],
+        accept_multiple_files=True,
+        key="uploader_main",
+    )
+    st.markdown(
+        """
+        <small>
+        NOTE: Do NOT rely on server-side microphone on cloud hosts. Use the built-in browser recorder (click 🎙️ Record) — it will create a WAV you can download and then upload here. 
+        </small>
+        """,
+        unsafe_allow_html=True,
+    )
+
 with cols[1]:
-    if st.button("🎙️ Record", key="btn_record"):
-        try:
-            wav = record_to_wav_bytes(5)
-            transcript = deepgram_transcribe(wav)
-            if transcript:
-                st.session_state.messages.append({"role":"user","content": transcript})
-                safe_rerun()
-            else:
-                st.info("Recording done — no transcription available (Deepgram not configured).")
-        except Exception as e:
-            st.error(f"Recording failed: {e}")
+    # Browser-side recorder embedded via HTML/JS.
+    # It does NOT send audio to the server automatically (avoids Render error).
+    # User should Download the recorded WAV, then Upload via the uploader above for processing.
+    if st.button("🎙️ Record (browser)", key="btn_record"):
+        # show the recorder UI in a modal-like expander
+        with st.expander("Browser Recorder — Record, Play, Download, then Upload the WAV above"):
+            recorder_html = """
+            <div>
+              <p><strong>Browser Recorder</strong> — Click Record, speak, then Stop. You can Play or Download the WAV. After downloading, upload the file via the Streamlit 'Upload files' control.</p>
+              <button id="record">Record</button>
+              <button id="stop" disabled>Stop</button>
+              <button id="play" disabled>Play</button>
+              <a id="download" style="display:inline-block;margin-left:10px;"></a>
+              <p id="status"></p>
+              <audio id="audio" controls style="display:block;margin-top:10px;"></audio>
+            </div>
+            <script>
+            const recordBtn = document.getElementById('record');
+            const stopBtn = document.getElementById('stop');
+            const playBtn = document.getElementById('play');
+            const downloadLink = document.getElementById('download');
+            const status = document.getElementById('status');
+            const audioEl = document.getElementById('audio');
+
+            let mediaRecorder;
+            let audioChunks = [];
+
+            async function init() {
+              try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+
+                mediaRecorder.addEventListener("dataavailable", event => {
+                  if (event.data.size > 0) audioChunks.push(event.data);
+                });
+
+                mediaRecorder.addEventListener("stop", () => {
+                  const blob = new Blob(audioChunks, { type: 'audio/wav' });
+                  audioChunks = [];
+                  const url = URL.createObjectURL(blob);
+                  audioEl.src = url;
+                  playBtn.disabled = false;
+                  const filename = 'recording_' + Date.now() + '.wav';
+                  downloadLink.href = url;
+                  downloadLink.download = filename;
+                  downloadLink.innerText = 'Download WAV';
+                  status.innerText = 'Recording ready. Download and upload via the Streamlit uploader.';
+                });
+                status.innerText = 'Ready to record (browser mic).';
+              } catch (e) {
+                status.innerText = 'Microphone access denied or not available: ' + e;
+                recordBtn.disabled = true;
+              }
+            }
+
+            recordBtn.onclick = () => {
+              if (!mediaRecorder) return;
+              mediaRecorder.start();
+              recordBtn.disabled = true;
+              stopBtn.disabled = false;
+              status.innerText = 'Recording...';
+            };
+
+            stopBtn.onclick = () => {
+              if (!mediaRecorder) return;
+              mediaRecorder.stop();
+              recordBtn.disabled = false;
+              stopBtn.disabled = true;
+            };
+
+            playBtn.onclick = () => {
+              if (audioEl.src) audioEl.play();
+            };
+
+            init();
+            </script>
+            """
+            st.components.v1.html(recorder_html, height=260)
+
 with cols[2]:
     action = st.selectbox("Action", ["Ask", "WebSearch", "Summarize", "Speak"], index=0, key="action_select")
 with cols[3]:
@@ -475,6 +547,21 @@ if send_clicked and (user_text or uploads):
     st.session_state.messages.append({"role":"user","content": query or "(uploaded files only)"})
 
     uploaded_docs = load_uploaded_files(uploads)
+
+    # If any uploaded file is audio and DG_KEY is configured, transcribe those audio files
+    for d in uploaded_docs:
+        if d.get("snippet", "").startswith("__AUDIO__"):
+            # snippet format used above: "__AUDIO__:{n}_bytes" and url contains path
+            # We'll attempt to transcribe by reading bytes from disk if DG_KEY present
+            try:
+                audio_path = Path(d.get("url"))
+                if audio_path.exists() and DG_KEY:
+                    wav_bytes = audio_path.read_bytes()
+                    transcript = deepgram_transcribe(wav_bytes)
+                    if transcript:
+                        st.session_state.messages.append({"role":"user","content": transcript})
+            except Exception:
+                pass
 
     # Summarize uploaded docs
     if action == "Summarize":
@@ -506,9 +593,7 @@ if send_clicked and (user_text or uploads):
         try:
             results, docs = websearch_pipeline(query)
             if uploaded_docs:
-                # uploaded docs first so LLM can use them as local authoritative material
                 docs = uploaded_docs + docs
-            # small delay so the badge shows
             time.sleep(0.2)
         except Exception as e:
             results, docs = [], []
@@ -516,7 +601,6 @@ if send_clicked and (user_text or uploads):
         finally:
             badge.empty()
 
-        # Show top snippet if available
         if results:
             top = results[0]
             st.markdown(f"**Top source — {top.get('source','Web')}**: {first_sentence(top.get('snippet',''))}")
@@ -525,11 +609,9 @@ if send_clicked and (user_text or uploads):
         else:
             st.info("No live snippets found for that query.")
 
-        # Decide RAG vs fallback
         if results and results_relevant(results, query):
             answer = synthesize_from_snippets(query, docs)
         else:
-            # fallback to uploaded docs or plain LLM
             if uploaded_docs:
                 ctx = "\n\n".join(f"[{d['source']}] {d['title']}\n{d['snippet'][:2000]}" for d in uploaded_docs[:8])
                 prompt = f"Use the documents below to answer the question. If they don't contain the answer, answer to the best of your ability.\n\n{ctx}\n\nQ: {query}\nA:"
@@ -539,7 +621,6 @@ if send_clicked and (user_text or uploads):
 
         st.session_state.messages.append({"role":"assistant","content": answer})
 
-        # Show sources
         st.markdown("**Sources used (top-ranked):**")
         if results:
             for r in results[:12]:
