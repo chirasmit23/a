@@ -1,4 +1,11 @@
+
 # Server
+
+docx2txt
+
+soundfile
+
+
 streamlit==1.38.0
 python-dotenv==1.0.1
 pysqlite3-binary
