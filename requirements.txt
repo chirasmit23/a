@@ -20,6 +20,8 @@ tqdm>=4.66.5
 beautifulsoup4
 lxml
 docx2txt>=0.8
+sounddevice>=0.5.0
+numpy
 
 urllib3
 # OCR & Images
