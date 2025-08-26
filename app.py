@@ -6,6 +6,7 @@ import os
 import io
 import re
 import time
+import base64
 import html
 import requests
 from pathlib import Path
@@ -16,12 +17,7 @@ from dotenv import load_dotenv
 import pytesseract
 from PIL import Image
 import docx2txt
-
-# NOTE: Removed server-side sounddevice/soundfile usage because cloud servers (Render, Heroku, etc.)
-# don't have a microphone device. Recording must happen in the browser (client) — below we embed a small
-# client-side recorder using an HTML/JS snippet and ask users to upload the recorded file.
-# import sounddevice as sd
-# import soundfile as sf
+import streamlit.components.v1 as components
 
 # Optional LLM (Groq). If not installed or not configured, model features are disabled gracefully.
 try:
@@ -76,24 +72,43 @@ def safe_rerun():
     st.rerun()
 
 # -----------------------
-# Audio helpers (client-side recording approach)
+# Audio helpers (server-side processing of bytes coming from the browser)
 # -----------------------
-# We no longer try to capture audio server-side. Instead we embed a small browser recorder.
-# The recorder produces a WAV blob the user can play/download. The user then uploads that file
-# via the file uploader. This avoids the "Error querying device -1" problem on Render.
-
 def deepgram_transcribe(wav_bytes: bytes) -> str:
+    """Transcribe bytes with Deepgram (if key present). Returns transcript or empty string."""
     if not DG_KEY:
         return ""
     try:
-        from deepgram import DeepgramClient, PrerecordedOptions, FileSource
-        client = DeepgramClient(api_key=DG_KEY)
-        src = {"buffer": wav_bytes}
-        opts = PrerecordedOptions(model="nova-2", smart_format=True, language="en")
-        resp = client.listen.prerecorded.v("1").transcribe_file(src, opts)
-        return resp.results.channels[0].alternatives[0].transcript if resp.results.channels else ""
+        # Use REST endpoint to send bytes (works without deepgram SDK)
+        headers = {"Authorization": f"Token {DG_KEY}"}
+        # choose the endpoint for prerecord; Deepgram supports direct file upload via multipart
+        files = {"file": ("recording.webm", wav_bytes)}
+        resp = requests.post("https://api.deepgram.com/v1/listen?punctuate=true", headers=headers, files=files, timeout=30)
+        resp.raise_for_status()
+        j = resp.json()
+        # try multiple result paths
+        if "results" in j and "channels" in j["results"] and j["results"]["channels"]:
+            alt = j["results"]["channels"][0].get("alternatives", [])
+            if alt:
+                return alt[0].get("transcript", "") or ""
+        # fallback
+        return j.get("results", {}).get("channels", [{}])[0].get("alternatives", [{}])[0].get("transcript", "") or ""
     except Exception:
         return ""
+
+def deepgram_tts(text: str) -> Optional[bytes]:
+    """Request Deepgram TTS (if DG_KEY present). Returns audio bytes or None."""
+    if not DG_KEY or not text:
+        return None
+    try:
+        headers = {"Authorization": f"Token {DG_KEY}", "Content-Type": "application/json"}
+        payload = {"text": text}
+        # Deepgram speak v1 endpoint (model param optional)
+        resp = requests.post("https://api.deepgram.com/v1/speak?model=aura-asteria-en", headers=headers, json=payload, timeout=30)
+        resp.raise_for_status()
+        return resp.content
+    except Exception:
+        return None
 
 # -----------------------
 # Sources (best-effort scrapers / APIs)
@@ -401,7 +416,7 @@ def load_uploaded_files(upload_list) -> List[Dict]:
                 text = docx2txt.process(str(p))[:3000]
             elif f.name.lower().endswith(".txt"):
                 text = p.read_text(errors="ignore")[:3000]
-            elif f.name.lower().endswith((".wav", ".mp3", ".m4a", ".ogg")):
+            elif f.name.lower().endswith((".wav", ".mp3", ".m4a", ".ogg", ".webm")):
                 # for audio: keep raw bytes in snippet so it can be processed by ASR if desired
                 data = p.read_bytes()
                 out.append({"source": f.name, "title": f.name, "snippet": f"__AUDIO__:{len(data)}_bytes", "url": str(p)})
@@ -422,160 +437,160 @@ def normalize_query(q: str) -> str:
     return " ".join(COMMON_TYPO.get(w.lower(), w) for w in q.split())
 
 # -----------------------
-# UI
+# UI & Recorder component
 # -----------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-st.title("🎤 UltraChat — WebSearch on Demand")
-st.caption("Pick 'Ask' for LLM-only answers (or include uploaded docs). Pick 'WebSearch' to fetch MDN / GfG / StackOverflow / Wikipedia / DuckDuckGo / arXiv and synthesize a single source-marked answer.")
+if "last_audio_b64" not in st.session_state:
+    st.session_state.last_audio_b64 = None
 
-# show chat history
+st.title("🎤 UltraChat — WebSearch on Demand (with browser recorder → server)")
+st.caption("Use the Record button to speak. Recording is captured in your browser and streamed to the Streamlit process for immediate transcription & LLM processing.")
+
+# Show chat history
 for m in st.session_state.messages:
     cls = "user-msg" if m.get("role") == "user" else "bot-msg"
     st.markdown(f"<div class='{cls}'>{m.get('content')}</div>", unsafe_allow_html=True)
 
-cols = st.columns([0.16, 0.08, 0.12, 0.52, 0.06])
+cols = st.columns([0.16, 0.12, 0.12, 0.48, 0.06])
 with cols[0]:
     uploads = st.file_uploader(
-        "Upload files (optional). To transcribe: upload a recorded WAV/MP3 after recording from the browser recorder below.",
-        type=["pdf","docx","txt","png","jpg","jpeg","webp","wav","mp3","m4a","ogg"],
+        "Upload files (optional). You can also record with the button to the right and it will be sent directly to the app.",
+        type=["pdf","docx","txt","png","jpg","jpeg","webp","wav","mp3","m4a","ogg","webm"],
         accept_multiple_files=True,
         key="uploader_main",
     )
-    st.markdown(
-        """
-        <small>
-        NOTE: Do NOT rely on server-side microphone on cloud hosts. Use the built-in browser recorder (click 🎙️ Record) — it will create a WAV you can download and then upload here. 
-        </small>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("<small>Recorded audio will be sent directly to the app and transcribed automatically (if DG_KEY set).</small>", unsafe_allow_html=True)
 
 with cols[1]:
-    # Browser-side recorder embedded via HTML/JS.
-    # It does NOT send audio to the server automatically (avoids Render error).
-    # User should Download the recorded WAV, then Upload via the uploader above for processing.
-    if st.button("🎙️ Record (browser)", key="btn_record"):
-        # show the recorder UI in a modal-like expander
-        with st.expander("Browser Recorder — Record, Play, Download, then Upload the WAV above"):
-            recorder_html = """
-            <div>
-              <p><strong>Browser Recorder</strong> — Click Record, speak, then Stop. You can Play or Download the WAV. After downloading, upload the file via the Streamlit 'Upload files' control.</p>
-              <button id="record">Record</button>
-              <button id="stop" disabled>Stop</button>
-              <button id="play" disabled>Play</button>
-              <a id="download" style="display:inline-block;margin-left:10px;"></a>
-              <p id="status"></p>
-              <audio id="audio" controls style="display:block;margin-top:10px;"></audio>
-            </div>
-            <script>
-            const recordBtn = document.getElementById('record');
-            const stopBtn = document.getElementById('stop');
-            const playBtn = document.getElementById('play');
-            const downloadLink = document.getElementById('download');
-            const status = document.getElementById('status');
-            const audioEl = document.getElementById('audio');
+    st.markdown("**Recorder**")
+    # Recorder flows: use components.html which returns a value set by Streamlit.setComponentValue(...)
+    recorder_html = r"""
+    <div>
+      <div style="font-family:Arial,Helvetica,sans-serif">
+        <div style="margin-bottom:6px;font-weight:600">Browser Recorder — click Record, speak, then Stop</div>
+        <button id="record">Record</button>
+        <button id="stop" disabled>Stop</button>
+        <button id="play" disabled>Play</button>
+        <span id="status" style="margin-left:8px"></span>
+        <audio id="audio" controls style="display:block;margin-top:8px"></audio>
+      </div>
+    </div>
+    <script>
+    const recordBtn = document.getElementById('record');
+    const stopBtn = document.getElementById('stop');
+    const playBtn = document.getElementById('play');
+    const status = document.getElementById('status');
+    const audioEl = document.getElementById('audio');
 
-            let mediaRecorder;
-            let audioChunks = [];
+    let mediaRecorder;
+    let audioChunks = [];
 
-            async function init() {
-              try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
+    async function init() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.addEventListener("dataavailable", e => {
+          if (e.data && e.data.size > 0) audioChunks.push(e.data);
+        });
+        mediaRecorder.addEventListener("stop", async () => {
+          const blob = new Blob(audioChunks, { type: audioChunks[0].type || 'audio/webm' });
+          audioChunks = [];
+          const url = URL.createObjectURL(blob);
+          audioEl.src = url;
+          playBtn.disabled = false;
+          status.innerText = 'Recording ready — sending to app...';
 
-                mediaRecorder.addEventListener("dataavailable", event => {
-                  if (event.data.size > 0) audioChunks.push(event.data);
-                });
-
-                mediaRecorder.addEventListener("stop", () => {
-                  const blob = new Blob(audioChunks, { type: 'audio/wav' });
-                  audioChunks = [];
-                  const url = URL.createObjectURL(blob);
-                  audioEl.src = url;
-                  playBtn.disabled = false;
-                  const filename = 'recording_' + Date.now() + '.wav';
-                  downloadLink.href = url;
-                  downloadLink.download = filename;
-                  downloadLink.innerText = 'Download WAV';
-                  status.innerText = 'Recording ready. Download and upload via the Streamlit uploader.';
-                });
-                status.innerText = 'Ready to record (browser mic).';
-              } catch (e) {
-                status.innerText = 'Microphone access denied or not available: ' + e;
-                recordBtn.disabled = true;
+          // convert blob => base64
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            try {
+              const b64data = reader.result; // like "data:audio/webm; codecs=opus;base64,...."
+              // Try to set component value via Streamlit bridge
+              if (window.parent && window.parent.Streamlit && typeof window.parent.Streamlit.setComponentValue === "function") {
+                window.parent.Streamlit.setComponentValue(b64data);
+              } else if (window.streamlit && typeof window.streamlit.setComponentValue === "function") {
+                window.streamlit.setComponentValue(b64data);
+              } else {
+                // last resort: postMessage (Streamlit should pick up messages internally)
+                window.parent.postMessage({streamlitRecording: true, data: b64data}, "*");
               }
+              status.innerText = 'Sent to app.';
+            } catch (err) {
+              status.innerText = 'Failed to send recording: ' + err;
             }
+          };
+          reader.readAsDataURL(blob);
+        });
+        status.innerText = 'Ready to record (browser mic).';
+      } catch (e) {
+        status.innerText = 'Microphone access denied or not available: ' + e;
+        recordBtn.disabled = true;
+      }
+    }
 
-            recordBtn.onclick = () => {
-              if (!mediaRecorder) return;
-              mediaRecorder.start();
-              recordBtn.disabled = true;
-              stopBtn.disabled = false;
-              status.innerText = 'Recording...';
-            };
+    recordBtn.onclick = () => {
+      if (!mediaRecorder) return;
+      audioChunks = [];
+      mediaRecorder.start();
+      recordBtn.disabled = true;
+      stopBtn.disabled = false;
+      status.innerText = 'Recording...';
+    };
+    stopBtn.onclick = () => {
+      if (!mediaRecorder) return;
+      mediaRecorder.stop();
+      recordBtn.disabled = false;
+      stopBtn.disabled = true;
+    };
+    playBtn.onclick = () => {
+      if (audioEl.src) audioEl.play();
+    };
 
-            stopBtn.onclick = () => {
-              if (!mediaRecorder) return;
-              mediaRecorder.stop();
-              recordBtn.disabled = false;
-              stopBtn.disabled = true;
-            };
+    init();
+    </script>
+    """
+    # components.html will return the last value set via Streamlit.setComponentValue inside the iframe.
+    # When the user records and stops, the JS will call Streamlit.setComponentValue(dataUrl)
+    rec_result = components.html(recorder_html, height=220)
 
-            playBtn.onclick = () => {
-              if (audioEl.src) audioEl.play();
-            };
-
-            init();
-            </script>
-            """
-            st.components.v1.html(recorder_html, height=260)
+    # rec_result will be a data URL (e.g. "data:audio/webm;codecs=opus;base64,....")
+    if rec_result:
+        st.success("Audio received from browser recorder.")
+        st.session_state.last_audio_b64 = rec_result
 
 with cols[2]:
     action = st.selectbox("Action", ["Ask", "WebSearch", "Summarize", "Speak"], index=0, key="action_select")
+
 with cols[3]:
-    user_text = st.text_input("Type your message...", key="input_text").strip()
+    user_text = st.text_input("Type your message (or leave empty to use recorded input)...", key="input_text").strip()
+
 with cols[4]:
     send_clicked = st.button("Send", key="btn_send")
 
 # -----------------------
-# Main behavior
+# Helper to process a query (shared between typed and recorded)
 # -----------------------
-if send_clicked and (user_text or uploads):
-    query = normalize_query(user_text or "")
-    st.session_state.messages.append({"role":"user","content": query or "(uploaded files only)"})
-
-    uploaded_docs = load_uploaded_files(uploads)
-
-    # If any uploaded file is audio and DG_KEY is configured, transcribe those audio files
-    for d in uploaded_docs:
-        if d.get("snippet", "").startswith("__AUDIO__"):
-            # snippet format used above: "__AUDIO__:{n}_bytes" and url contains path
-            # We'll attempt to transcribe by reading bytes from disk if DG_KEY present
-            try:
-                audio_path = Path(d.get("url"))
-                if audio_path.exists() and DG_KEY:
-                    wav_bytes = audio_path.read_bytes()
-                    transcript = deepgram_transcribe(wav_bytes)
-                    if transcript:
-                        st.session_state.messages.append({"role":"user","content": transcript})
-            except Exception:
-                pass
+def process_query_and_respond(query: str, uploaded_docs: List[Dict], action: str):
+    """Given a plain text query, uploaded docs and an action, run the pipeline and append assistant output to messages.
+       If action == 'Speak' and DG_KEY available, play TTS.
+    """
+    st.session_state.messages.append({"role":"user","content": query})
 
     # Summarize uploaded docs
     if action == "Summarize":
         if not uploaded_docs:
             st.warning("Please upload files to summarize.")
-        else:
-            ctx = "\n\n".join(f"[{d['source']}] {d['title']}\n{d['snippet'][:1600]}" for d in uploaded_docs[:8])
-            prompt = f"Summarize the following documents concisely and clearly:\n\n{ctx}\n\nSummary:"
-            summary = _llm_invoke(prompt)
-            st.session_state.messages.append({"role":"assistant","content": summary})
-            safe_rerun()
+            return
+        ctx = "\n\n".join(f"[{d['source']}] {d['title']}\n{d['snippet'][:1600]}" for d in uploaded_docs[:8])
+        prompt = f"Summarize the following documents concisely and clearly:\n\n{ctx}\n\nSummary:"
+        summary = _llm_invoke(prompt)
+        st.session_state.messages.append({"role":"assistant","content": summary})
+        return
 
     # Ask -> LLM only (no websearch)
-    elif action == "Ask":
+    if action == "Ask":
         if uploaded_docs:
             ctx = "\n\n".join(f"[{d['source']}] {d['title']}\n{d['snippet'][:2000]}" for d in uploaded_docs[:8])
             prompt = f"Use the documents below to answer the question. If they don't contain the answer, answer to the best of your ability.\n\n{ctx}\n\nQ: {query}\nA:"
@@ -583,13 +598,12 @@ if send_clicked and (user_text or uploads):
         else:
             ans = _llm_invoke(query)
         st.session_state.messages.append({"role":"assistant","content": ans})
-        safe_rerun()
+        return
 
     # WebSearch -> multi-source + synthesize
-    elif action == "WebSearch":
+    if action == "WebSearch":
         badge = st.empty()
         badge.markdown('<div class="websearch-badge"><div class="pulse-dot"></div> WebSearching…</div>', unsafe_allow_html=True)
-
         try:
             results, docs = websearch_pipeline(query)
             if uploaded_docs:
@@ -629,11 +643,10 @@ if send_clicked and (user_text or uploads):
                 st.markdown(f'<span class="source-chip">{html.escape(r.get("source","Web"))}</span> <a href="{url}" target="_blank">{html.escape(title or url)}</a>', unsafe_allow_html=True)
         else:
             st.info("No sources to display.")
-
-        safe_rerun()
+        return
 
     # Speak -> produce answer then TTS
-    elif action == "Speak":
+    if action == "Speak":
         if uploaded_docs:
             ctx = "\n\n".join(f"[{d['source']}] {d['title']}\n{d['snippet'][:2000]}" for d in uploaded_docs[:8])
             prompt = f"Use the documents below to answer the question. If they don't contain the answer, answer to the best of your ability.\n\n{ctx}\n\nQ: {query}\nA:"
@@ -643,15 +656,86 @@ if send_clicked and (user_text or uploads):
 
         st.session_state.messages.append({"role":"assistant","content": ans})
 
+        # TTS
         if DG_KEY:
-            try:
-                resp = requests.post("https://api.deepgram.com/v1/speak?model=aura-asteria-en",
-                                     headers={"Authorization": f"Token {DG_KEY}"},
-                                     json={"text": ans}, timeout=30)
-                resp.raise_for_status()
-                st.audio(resp.content, format="audio/wav")
-            except Exception as e:
-                st.error(f"TTS failed: {e}")
+            tts_audio = deepgram_tts(ans)
+            if tts_audio:
+                st.audio(tts_audio, format="audio/wav")
+            else:
+                st.error("TTS failed or returned no audio.")
         else:
             st.info("Deepgram TTS not configured (set DG_KEY).")
+        return
+
+# -----------------------
+# When user presses Send manually
+# -----------------------
+if send_clicked and (user_text or uploads):
+    query = normalize_query(user_text or "")
+    uploaded_docs = load_uploaded_files(uploads)
+    process_query_and_respond(query, uploaded_docs, action)
+    safe_rerun()
+
+# -----------------------
+# When a recorded audio arrives from the recorder component
+# components.html returns the base64 data URL as rec_result. We also stored it in session_state.last_audio_b64.
+# When available: decode, optionally transcribe with Deepgram, and auto-run pipeline using transcribed text.
+# -----------------------
+def handle_recording_b64(data_url: str):
+    """Process a data URL (data:audio/xxx;base64,....) returned from component."""
+    if not data_url:
+        return
+    # parse header
+    if "," not in data_url:
+        return
+    header, b64 = data_url.split(",", 1)
+    # determine ext from header
+    m = re.match(r"data:(audio/[^;]+);base64", header)
+    mime = m.group(1) if m else "audio/webm"
+    ext = "webm"
+    if "wav" in mime:
+        ext = "wav"
+    elif "ogg" in mime:
+        ext = "ogg"
+    elif "mpeg" in mime or "mp3" in mime:
+        ext = "mp3"
+
+    try:
+        raw = base64.b64decode(b64)
+    except Exception as e:
+        st.error(f"Failed to decode recorded audio: {e}")
+        return
+
+    updir = Path("uploads"); updir.mkdir(exist_ok=True)
+    fname = updir / f"recording_{int(time.time()*1000)}.{ext}"
+    fname.write_bytes(raw)
+    st.info(f"Saved recording to {fname}")
+
+    # Optionally transcribe using Deepgram (if configured)
+    transcript = ""
+    if DG_KEY:
+        with st.spinner("Transcribing (Deepgram)..."):
+            try:
+                transcript = deepgram_transcribe(raw)
+            except Exception:
+                transcript = ""
+    else:
+        st.info("DG_KEY not configured; skipping automatic transcription. You can upload the saved file manually.")
+
+    if transcript:
+        st.success("Transcription done.")
+        # automatically process query using transcript
+        uploaded_docs = load_uploaded_files([st.uploaded_file_manager._uploaded_files.get(str(fname))]) if False else load_uploaded_files([ ])  # no direct mapping; we already saved file, but load_uploaded_files expects UploadedFile objects
+        # Instead, manually create uploaded_docs entry to indicate audio was uploaded
+        uploaded_docs = [{"source": fname.name, "title": fname.name, "snippet": f"__AUDIO__:{len(raw)}_bytes", "url": str(fname)}]
+        # Use transcript as query and auto-run selected action
+        process_query_and_respond(transcript, uploaded_docs, action)
         safe_rerun()
+    else:
+        st.warning("No transcript available (Deepgram not configured or transcription failed). You can manually upload the saved recording to the file uploader to process it.")
+
+# If session has last_audio_b64 but not processed this run, handle it now
+if st.session_state.get("last_audio_b64"):
+    handle_recording_b64(st.session_state.get("last_audio_b64"))
+    # clear so we don't re-process immediately on reruns
+    st.session_state.last_audio_b64 = None
