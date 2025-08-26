@@ -13,7 +13,34 @@ python-dotenv>=1.0.0            # For loading secret API keys from a .env file.
 # --- AI & Language Models ---
 langchain-groq>=0.1.3           # For connecting to Groq's fast language models.
 # Note: This will automatically install the necessary 'langchain' and 'langchain-core' packages.
+# ==============================================================================
+# Final Requirements for UltraChat Voice RAG (Optimized for Deployment)
+# ==============================================================================
 
+# --- Core Application Framework ---
+streamlit>=1.33.0
+python-dotenv>=1.0.0
+
+# --- AI & Language Models ---
+langchain-groq>=0.1.3
+
+# --- Voice & Audio Processing ---
+streamlit-mic-recorder>=0.0.9
+deepgram-sdk>=3.0.0
+
+# --- Web Scraping & API Requests ---
+requests>=2.31.0
+beautifulsoup4>=4.12.3
+lxml>=5.2.2
+
+# --- Document & File Processing ---
+# These libraries handle file uploads.
+python-docx>=1.1.2
+docx2txt>=0.8
+Pillow>=10.0.0
+pytesseract>=0.3.10  # This requires 'tesseract-ocr' from packages.txt
+# A robust library for PDF files.
+PyMuPDF>=1.24.0
 # --- Voice & Audio Processing ---
 streamlit-mic-recorder>=0.0.9   # The MODERN library for browser-based audio recording. THIS FIXES THE DEPLOYMENT ERROR.
 deepgram-sdk>=3.0.0             # The official library for Deepgram's Speech-to-Text and Text-to-Speech APIs.
