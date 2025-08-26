@@ -1,6 +1,9 @@
 portaudio19-dev
-ffmpeg
-libgl1-mesa-glx
-libglib2.0-0
+# System-level packages needed for the app to run on Streamlit Cloud
+
+# 1. The main Tesseract OCR engine. This is required for pytesseract.
 tesseract-ocr
 tesseract-ocr-eng
+
+# 2. A critical dependency for image processing on Linux.
+libgl1-mesa-glx
