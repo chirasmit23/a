@@ -19,7 +19,7 @@ import pytesseract
 from PIL import Image
 import docx2txt
 from bs4 import BeautifulSoup
-from fpdf import FPDF
+
 
 # Browser mic recorder (preferred for deployed Streamlit)
 # pip install streamlit-mic-recorder
