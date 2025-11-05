@@ -2,7 +2,7 @@ streamlit
 python-dotenv
 
 # LangChain (core only)
-langchain
+langchain==0.2.10
 langchain-core
 langchain-community
 
