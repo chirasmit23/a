@@ -210,24 +210,24 @@ elif choose=="summarisation" and query:
             st.info("fetching youtube details")
             
             yt_text = fetch_youtube_transcript(youtube_id)
-            if:
-                docs = [Document(page_content=yt_text)]
-                text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-                final_documents = text_splitter.split_documents(docs)
-                embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en-v1.5")
-                vectorstore = FAISS.from_documents(final_documents, embeddings)
-                llm = ChatGroq(model="openai/gpt-oss-120b", api_key=groq_api_key)
-                prompt = ChatPromptTemplate.from_template(
-                    "You are a YouTube video summarizer. Answer the user's question based on the video transcript provided.\n<context>{context}</context>\nQuestion: {input}"
-                )
-                document_chain = create_stuff_documents_chain(llm, prompt)
-                retriever = vectorstore.as_retriever()
-                retrieval_chain = create_retrieval_chain(retriever, document_chain)
-                result = retrieval_chain.invoke({"input": query})
-                st.subheader("Answer from YouTube Transcript:")
-                st.write(result.get("answer", "No answer could be generated."))
-                with st.expander("Show Transcript"):
-                    st.write(yt_text)
+            
+            docs = [Document(page_content=yt_text)]
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            final_documents = text_splitter.split_documents(docs)
+            embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+            vectorstore = FAISS.from_documents(final_documents, embeddings)
+            llm = ChatGroq(model="openai/gpt-oss-120b", api_key=groq_api_key)
+            prompt = ChatPromptTemplate.from_template(
+                "You are a YouTube video summarizer. Answer the user's question based on the video transcript provided.\n<context>{context}</context>\nQuestion: {input}"
+            )
+            document_chain = create_stuff_documents_chain(llm, prompt)
+            retriever = vectorstore.as_retriever()
+            retrieval_chain = create_retrieval_chain(retriever, document_chain)
+            result = retrieval_chain.invoke({"input": query})
+            st.subheader("Answer from YouTube Transcript:")
+            st.write(result.get("answer", "No answer could be generated."))
+            with st.expander("Show Transcript"):
+                st.write(yt_text)
             
            
 else:
