@@ -126,47 +126,47 @@ Label the question as one of the following:
 
  Respond with only one word: 'realtime' or 'general"
 """
-    classifier_llm = ChatGroq(model="openai/gpt-oss-120b", api_key=groq_api_key)
-    classifier_promt=ChatPromptTemplate.from_messages([("system", classifier_query), ("human", "{question}")])
-    classifier_chain=classifier_llm|classifier_promt
-    classification_result = classifier_chain.invoke( query)
+        classifier_llm = ChatGroq(model="openai/gpt-oss-120b", api_key=groq_api_key)
+        classifier_promt=ChatPromptTemplate.from_messages([("system", classifier_query), ("human", "{question}")])
+        classifier_chain=classifier_llm|classifier_promt
+        classification_result = classifier_chain.invoke( query)
+        
     
-
-    from langchain.chains import LLMChain
-  
-   
-    if "realtime" in classification_result:
-        grounding_tool = types.Tool(
-    google_search=types.GoogleSearch()
-)
-
-        config = types.GenerateContentConfig(
-            tools=[grounding_tool]
-        )
-        client = genai.Client(api_key=gemini_api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[query],
-            config=config,
-        )
-
-        
-        st.write("**Answer:**", response.text)
-        
-    else:   
-        st.info("search via chat")
-        llm = ChatGroq(
-            model="openai/gpt-oss-120b",
-            api_key=groq_api_key
-        )
-
-        # Create prompt template
-        prompt = ChatPromptTemplate.from_template(
-            "You are a helpful assistant. Answer the user's question clearly and concisely.\nQuestion: {question}"
-        )
-        chain = prompt | llm
-        response = chain.invoke({"question": query})
-        st.subheader("Answer:")
-        st.write(response.content)
-
+        from langchain.chains import LLMChain
+      
+       
+        if "realtime" in classification_result:
+            grounding_tool = types.Tool(
+        google_search=types.GoogleSearch()
+    )
+    
+            config = types.GenerateContentConfig(
+                tools=[grounding_tool]
+            )
+            client = genai.Client(api_key=gemini_api_key)
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[query],
+                config=config,
+            )
+    
             
+            st.write("**Answer:**", response.text)
+            
+        else:   
+            st.info("search via chat")
+            llm = ChatGroq(
+                model="openai/gpt-oss-120b",
+                api_key=groq_api_key
+            )
+    
+            # Create prompt template
+            prompt = ChatPromptTemplate.from_template(
+                "You are a helpful assistant. Answer the user's question clearly and concisely.\nQuestion: {question}"
+            )
+            chain = prompt | llm
+            response = chain.invoke({"question": query})
+            st.subheader("Answer:")
+            st.write(response.content)
+    
+                
