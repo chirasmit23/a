@@ -2,9 +2,9 @@ streamlit
 python-dotenv
 
 # LangChain (core only)
-langchain==0.1.17
-langchain-core==0.1.52
-langchain-community==0.1.5
+langchain
+langchain-core
+langchain-community
 
 # LLM Providers (safe versions)
 langchain-groq
