@@ -186,8 +186,8 @@ elif choose=="summarisation" and query:
         youtube_url=extract_youtube_url(query)
         if youtube_url:
             from google.genai.types import HttpOptions, Part
-            client = genai.Client(api_key=gemini_api_key)
-            client = genai.Client(http_options=HttpOptions(api_version="v1beta"))
+            
+            client = genai.Client(http_options=HttpOptions(api_version="v1beta"),api_key=gemini_api_key)
             model_id = "gemini-2.5-flash"
 
             response = client.models.generate_content(
