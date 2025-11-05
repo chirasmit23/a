@@ -11,3 +11,4 @@ pypdf
 faiss-cpu
 sentence-transformers
 Pillow
+google-genai
