@@ -1,7 +1,7 @@
 streamlit
 python-dotenv
 
-# LangChain (stable & streamlit-safe)
+# LangChain - Last stable before breaking changes
 langchain==0.1.17
 langchain-core==0.1.52
 langchain-community==0.1.5
@@ -11,11 +11,10 @@ langchain-text-splitters
 langchain-groq
 langchain-google-genai
 google-generativeai
-google-genai==0.3.0
+google-genai==0.2.0
 
-# Embeddings + Vector Search (streamlit-compatible)
-faiss-cpu==1.7.4
-sentence-transformers
+# Vector DB (Lightweight - avoids FAISS issues)
+chromadb
 
 # PDF + Images
 pypdf
