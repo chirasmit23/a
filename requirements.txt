@@ -1,20 +1,15 @@
 streamlit
 python-dotenv
 
-# LangChain - Last stable before breaking changes
+# LangChain (core only)
 langchain==0.1.17
 langchain-core==0.1.52
 langchain-community==0.1.5
-langchain-text-splitters
 
-# Google + Groq LLMs
+# LLM Providers (safe versions)
 langchain-groq
 langchain-google-genai
 google-generativeai
-google-genai==0.2.0
-
-# Vector DB (Lightweight - avoids FAISS issues)
-chromadb
 
 # PDF + Images
 pypdf
