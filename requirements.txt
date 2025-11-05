@@ -1,15 +1,22 @@
 streamlit
 python-dotenv
-langchain
-langchain-core
-langchain-community
-langchain-text-splitters
+
+# LangChain Core Packages
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-text-splitters>=0.2.0
+
+# LLM Providers
 langchain-groq
 langchain-google-genai
-google-generativeai
 google-genai>=0.3.0
+google-generativeai
 
-pypdf
-faiss-cpu
+# Embeddings & Vector Store
 sentence-transformers
+faiss-cpu
+
+# PDF & File Processing
+pypdf
 Pillow
