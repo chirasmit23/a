@@ -14,8 +14,9 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 
 # ✅ Chains (these are now inside langchain.chains)
+from langchain.chains.combine_document_chain import create_stuff_documents_chain
 from langchain.chains.retrieval import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+
 
 # ✅ Chat Models (external providers)
 from langchain_groq import ChatGroq
