@@ -1,4 +1,5 @@
-import os
+import os,re,requests
+from bs4 import BeautifulSoup
 import streamlit as st
 from dotenv import load_dotenv
 from pathlib import Path
@@ -27,15 +28,69 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # from PIL import Image
 # import cv2
 from google import genai
-
+from googleapiclient.discovery import build
 
 # Load API keys
 load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+SEARCH_ENGINE_ID = os.getenv("SEARCH_ENGINE_ID")
+SCRAPEDO_API_KEY = os.getenv("SCRAPEDO_API_KEY")
 groq_api_key = os.getenv("groq_apikey")
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 
 # UI
 st.title("PDF & Image Question Answer Bot")
+choose=st.selectbox("option",["select","Websearch","summarisation"])
+def _clean(text: str) -> str:
+    """A helper function to clean up scraped text by removing excess whitespace."""
+    return re.sub(r"\s+", " ", text).strip()
+def extract_youtube_id(url):
+    match = re.search(r"(?:v=|youtu\.be/|shorts/)([a-zA-Z0-9_-]{11})", url)
+    return match.group(1) if match else None
+def extract_youtube_url(url):
+    match= re.search(r"(https?://(?:www\.)?(?:youtube\.com|youtu\.be)/(?:watch\?v=|shorts/|embed/)?[a-zA-Z0-9_-]{11}(?:[^\s]*)?)",url)
+
+    return match.group(1) if match else None
+
+# Helper function: Fetch transcript text
+def fetch_youtube_transcript(video_id):
+    if not SCRAPEDO_API_KEY:
+        return None
+    try:
+        url = f"https://www.tubetranscript.com/en/watch?v={video_id}"
+        params = {"token": SCRAPEDO_API_KEY, "url": url, "render": "true"}
+        r = requests.get("https://api.scrape.do/", params=params, timeout=60)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "lxml")
+        div = soup.find("div", id="main-transcript-content")
+        return _clean(div.get_text(" ", strip=True)) if div else None
+    
+    except Exception as e:
+        return f"Error fetching transcript: {e}"
+
+def google_custom_search(query):
+    """Performs a Google search and returns formatted results with sources."""
+    if not GOOGLE_API_KEY or not SEARCH_ENGINE_ID:
+        return "Error: Google Custom Search API key or Search Engine ID not configured.", []
+    try:
+        service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
+        res = service.cse().list(q=query, cx=SEARCH_ENGINE_ID, num=5).execute()
+        items = res.get("items", [])
+        
+        if not items:
+            return "No search results found.", []    
+        formatted_results = ""
+        sources = []
+        for i, item in enumerate(items):
+            title = item.get("title", "No title")
+            snippet = item.get("snippet", "No description")
+            link = item.get("link", "")
+            formatted_results += f"Result {i+1}:\nTitle: {title}\nDescription: {snippet}\nURL: {link}\n\n"
+            sources.append(link)
+        
+        return formatted_results, sources
+    except Exception as e:
+        return f"Error calling Custom Search API: {e}", []
 uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf", "png", "jpg", "jpeg", "webp"])
 query = st.text_input("Ask a question about your document or image")
 
@@ -81,8 +136,8 @@ if uploaded_file:
             st.error(f"Error processing image: {e}")
 
 
-
-    if docs and uploaded_file.name.lower().endswith(".pdf"):
+    
+    if docs and uploaded_file.name.lower().endswith(".pdf") :
         # Split text
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         final_documents = text_splitter.split_documents(docs)
@@ -106,12 +161,77 @@ if uploaded_file:
         retriever = vectorstore.as_retriever()
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-        if query:
-            result = retrieval_chain.invoke({"input": query})
-            st.subheader("Answer:")
-            st.write(result.get("answer", "No answer could be generated."))
-    elif uploaded_file:
-        st.info("Could not extract any text from the uploaded file.")
+elif choose=="Websearch" and query:
+    search_results, sources = google_custom_search(query)
+    st.info("Found sources. Generating answer...")
+    search_llm = ChatGroq(model="openai/gpt-oss-120b", api_key=groq_api_key)
+    search_prompt_template = """
+    Based on the following search results, provide a comprehensive answer to the user's question.
+    After the answer, list the URLs of the sources you used under a 'Sources:' heading.
+
+    Search Results:
+    {context}
+
+    User's Question: {question}
+    """
+    search_prompt = ChatPromptTemplate.from_template(search_prompt_template)
+    search_chain = search_prompt | search_llm
+    response = search_chain.invoke({"context": search_results, "question": query})
+    st.subheader("Answer from Web Search:")
+    st.write(response.content)
+
+elif choose=="summarisation": 
+    try:       
+        st.info("fetch via gemini")
+        youtube_url=extract_youtube_url(query)
+        if youtube_url:
+            from google.genai.types import HttpOptions, Part
+            client = genai.Client(api_key=gemini_api_key)
+            client = genai.Client(http_options=HttpOptions(api_version="v1beta"))
+            model_id = "gemini-2.5-flash"
+
+            response = client.models.generate_content(
+                model=model_id,
+                contents=[
+                    Part.from_uri(
+                        file_uri=youtube_url,
+                        mime_type="video/mp4",
+                    ),
+                    "Write a short and engaging blog post based on this video.",
+                ],
+            )
+
+            st.write(response.text)
+    except:        
+        st.info("fetch via scrap")
+            
+        youtube_id = extract_youtube_id(query)
+        if youtube_id:
+            st.info("fetching youtube details")
+            
+            yt_text = fetch_youtube_transcript(youtube_id)
+            if yt_text.startswith("Error"):
+                st.error(yt_text)
+            else:
+                docs = [Document(page_content=yt_text)]
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+                final_documents = text_splitter.split_documents(docs)
+                embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+                vectorstore = FAISS.from_documents(final_documents, embeddings)
+                llm = ChatGroq(model="openai/gpt-oss-120b", api_key=groq_api_key)
+                prompt = ChatPromptTemplate.from_template(
+                    "You are a YouTube video summarizer. Answer the user's question based on the video transcript provided.\n<context>{context}</context>\nQuestion: {input}"
+                )
+                document_chain = create_stuff_documents_chain(llm, prompt)
+                retriever = vectorstore.as_retriever()
+                retrieval_chain = create_retrieval_chain(retriever, document_chain)
+                result = retrieval_chain.invoke({"input": query})
+                st.subheader("Answer from YouTube Transcript:")
+                st.write(result.get("answer", "No answer could be generated."))
+                with st.expander("Show Transcript"):
+                    st.write(yt_text)
+            
+           
 else:
     if query:
         classifier_query = """
