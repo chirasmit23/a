@@ -1,14 +1,19 @@
 streamlit
 python-dotenv
-langchain==0.0.353
-langchain-core
-langchain-community
+
+# Latest LangChain with chain support
+langchain==0.2.10
+langchain-community==0.2.9
+langchain-core==0.2.9
 langchain-text-splitters
+
 langchain-groq
 langchain-google-genai
 google-generativeai
-pypdf
-faiss-cpu
+google-genai==0.3.0
+
 sentence-transformers
+faiss-cpu
+
+pypdf
 Pillow
-google-genai
