@@ -18,7 +18,6 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 
 
-
 # ✅ Chat Models (external providers)
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -128,18 +127,19 @@ Label the question as one of the following:
 """
         classifier_llm = ChatGroq(model="openai/gpt-oss-120b", api_key=groq_api_key)
         classifier_promt=ChatPromptTemplate.from_messages([("system", classifier_query), ("human", "{question}")])
-        classifier_chain=classifier_llm|classifier_promt
-        classification_result = classifier_chain.invoke( query)
+        classifier_chain=classifier_promt|classifier_llm
+        classification_result = classifier_chain.invoke(query)
+        query_type = classification_result.content.strip().lower()
         
+        
+
     
-        from langchain.chains import LLMChain
-      
-       
-        if "realtime" in classification_result:
+    
+        if "realtime" in query_type:
             grounding_tool = types.Tool(
         google_search=types.GoogleSearch()
     )
-    
+
             config = types.GenerateContentConfig(
                 tools=[grounding_tool]
             )
@@ -149,7 +149,7 @@ Label the question as one of the following:
                 contents=[query],
                 config=config,
             )
-    
+
             
             st.write("**Answer:**", response.text)
             
@@ -159,7 +159,7 @@ Label the question as one of the following:
                 model="openai/gpt-oss-120b",
                 api_key=groq_api_key
             )
-    
+
             # Create prompt template
             prompt = ChatPromptTemplate.from_template(
                 "You are a helpful assistant. Answer the user's question clearly and concisely.\nQuestion: {question}"
@@ -168,5 +168,5 @@ Label the question as one of the following:
             response = chain.invoke({"question": query})
             st.subheader("Answer:")
             st.write(response.content)
-    
-                
+
+            
