@@ -180,7 +180,7 @@ elif choose=="Websearch" and query:
     st.subheader("Answer from Web Search:")
     st.write(response.content)
 
-elif choose=="summarisation": 
+elif choose=="summarisation" and query: 
     try:       
         st.info("fetch via gemini")
         youtube_url=extract_youtube_url(query)
