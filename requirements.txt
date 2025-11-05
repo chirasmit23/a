@@ -1,6 +1,9 @@
 streamlit
 python-dotenv
-
+requests
+beautifulsoup4
+lxml
+google-api-python-client
 # LangChain (core only)
 langchain==0.2.10
 langchain-core
