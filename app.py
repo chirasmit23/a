@@ -210,9 +210,7 @@ elif choose=="summarisation" and query:
             st.info("fetching youtube details")
             
             yt_text = fetch_youtube_transcript(youtube_id)
-            if yt_text.startswith("Error"):
-                st.error(yt_text)
-            else:
+            if:
                 docs = [Document(page_content=yt_text)]
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
                 final_documents = text_splitter.split_documents(docs)
