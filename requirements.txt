@@ -8,7 +8,7 @@ google-api-python-client
 langchain==0.2.10
 langchain-core
 langchain-community
-
+empyrebase
 deepgram-sdk==4.8.1
 # LLM Providers (safe versions)
 langchain-groq
