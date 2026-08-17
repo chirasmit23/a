@@ -17,7 +17,7 @@ langchain-text-splitters==0.2.2
 
 # LangChain integrations
 langchain-groq==0.1.6
-langchain-google-genai==1.0.1
+langchain-google-genai==1.0.8
 
 # LLM SDKs
 groq
