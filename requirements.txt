@@ -30,7 +30,7 @@ huggingface-hub
 
 # PDF
 pypdf
-fpdf
+fpdf2==2.8.8
 
 # Image
 Pillow
