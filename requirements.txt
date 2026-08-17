@@ -9,9 +9,9 @@ google-api-python-client
 google-genai
 google-generativeai
 
-# LangChain - keep versions compatible with your existing code
+# LangChain
 langchain==0.2.10
-langchain-core==0.2.10
+langchain-core==0.2.22
 langchain-community==0.2.10
 langchain-text-splitters==0.2.2
 
@@ -19,24 +19,24 @@ langchain-text-splitters==0.2.2
 langchain-groq==0.1.6
 langchain-google-genai==1.0.1
 
-# LLM SDK
+# LLM SDKs
 groq
 
-# Vector database / embeddings
+# Vector DB / Embeddings
 faiss-cpu
 sentence-transformers
 transformers
 huggingface-hub
 
-# PDF processing
+# PDF
 pypdf
 fpdf2
 
-# Images
+# Image
 Pillow
 
 # Firebase
 empyrebase==1.1.1
 
-# Speech-to-text
+# Deepgram
 deepgram-sdk==4.8.1
