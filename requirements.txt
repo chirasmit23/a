@@ -11,7 +11,7 @@ google-generativeai
 
 # LangChain
 langchain==0.2.10
-langchain-core==0.2.22
+langchain-core==0.2.23
 langchain-community==0.2.10
 langchain-text-splitters==0.2.2
 
@@ -30,7 +30,7 @@ huggingface-hub
 
 # PDF
 pypdf
-fpdf2
+fpdf2==2.8.8
 
 # Image
 Pillow
