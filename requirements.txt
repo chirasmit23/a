@@ -9,7 +9,7 @@ langchain==0.2.10
 langchain-core
 langchain-community
 
-deepgram-sdk
+deepgram-sdk==4.8.1
 # LLM Providers (safe versions)
 langchain-groq
 langchain-google-genai
