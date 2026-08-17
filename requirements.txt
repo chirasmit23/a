@@ -3,19 +3,40 @@ python-dotenv
 requests
 beautifulsoup4
 lxml
-google-api-python-client
-# LangChain (core only)
-langchain==0.2.10
-langchain-core
-langchain-community
-empyrebase
-deepgram-sdk==4.8.1
-# LLM Providers (safe versions)
-langchain-groq
-langchain-google-genai
-google-generativeai
-google-genai
 
-# PDF + Images
+# Google APIs
+google-api-python-client
+google-genai
+google-generativeai
+
+# LangChain - keep versions compatible with your existing code
+langchain==0.2.10
+langchain-core==0.2.10
+langchain-community==0.2.10
+langchain-text-splitters==0.2.2
+
+# LangChain integrations
+langchain-groq==0.1.6
+langchain-google-genai==1.0.1
+
+# LLM SDK
+groq
+
+# Vector database / embeddings
+faiss-cpu
+sentence-transformers
+transformers
+huggingface-hub
+
+# PDF processing
 pypdf
+fpdf2
+
+# Images
 Pillow
+
+# Firebase
+empyrebase==1.1.1
+
+# Speech-to-text
+deepgram-sdk==4.8.1
